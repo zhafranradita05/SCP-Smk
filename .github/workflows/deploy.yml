@@ -9,10 +9,10 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
       - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.2'
-          extensions: mbstring, xml, ctype, iconv, intl, pdo_mysql, bcmath, fileinfo, gd, zip, curl
+    uses: shivammathur/setup-php@v2
+    with:
+    php-version: '8.3'
+    extensions: mbstring, xml, ctype, iconv, intl, pdo_mysql, bcmath, fileinfo, openssl
       - name: Install Composer Dependencies
         run: composer install --no-dev --prefer-dist --optimize-autoloader --no-progress
       - name: Setup Node.js & Build Vite
