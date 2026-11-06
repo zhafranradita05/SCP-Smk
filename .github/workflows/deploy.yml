@@ -41,7 +41,3 @@ jobs:
             **/node_modules/**
             .env
             *.md
-
-      - name: Trigger Migration Webhook
-        run: |
-          curl -sS -k "https://classprogress.web.id/api/deploy-migrate-${{ secrets.DEPLOY_SECRET }}?seed=1"
