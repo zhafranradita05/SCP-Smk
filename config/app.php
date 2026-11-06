@@ -122,5 +122,5 @@ return [
         'driver' => env('APP_MAINTENANCE_DRIVER', 'file'),
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
-
+    'deploy_secret' => env('DEPLOY_SECRET', 'skansaba_super_secret_token_12345'),
 ];

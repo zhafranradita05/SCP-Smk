@@ -1,7 +1,151 @@
 <?php
 
+use App\Http\Controllers\Web\UserController;
+use App\Http\Controllers\Web\ReminderController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Web\AuthController;
+use App\Http\Controllers\Web\SettingController;
+use App\Http\Controllers\Web\MasterDataController;
+use App\Http\Controllers\Web\ForgotPasswordController;
+use App\Http\Controllers\Web\PromotionController;
 
-Route::get('/', function () {
-    return view('welcome');
+// 1. Rute Publik (Belum Login)
+Route::get('/', [AuthController::class, 'showLogin'])->name('login');
+Route::get('/login', [AuthController::class, 'showLogin']);
+Route::post('/login', [AuthController::class, 'login']);
+
+// Lupa Password (Belum Login)
+Route::get('/forgot-password', [ForgotPasswordController::class, 'showForm'])->name('password.request');
+Route::post('/forgot-password', [ForgotPasswordController::class, 'resetPassword'])->name('password.update');
+
+// 2. Rute Cetak Laporan Rekapitulasi Izin Siswa (Wali Kelas & Guru BK: mendukung Web Session & Token Mobile)
+Route::get('/leaves/recap/print', [\App\Http\Controllers\Web\RecapController::class, 'printLeaveRecap'])->name('leaves.recap.print');
+
+// 2b. Rute Halaman Jadwal Mengajar Guru & Status Jurnal (Guru, Wali Kelas & Guru BK)
+Route::middleware(['auth', 'role:guru,wali_kelas,guru_bk'])->group(function () {
+    Route::get('/teacher/schedule', [\App\Http\Controllers\Web\TeacherScheduleController::class, 'index'])->name('teacher.schedule');
+    Route::get('/guru/jadwal', fn() => redirect()->route('teacher.schedule'));
+});
+
+// 3. Rute Terotentikasi Umum (Semua Pengguna yang Berhasil Login Web)
+Route::middleware('auth')->group(function () {
+    Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+});
+
+// 4. RUTE KHUSUS WAKA KURIKULUM (DIPROTEKSI KETAT: Siswa & Role Lain Dilarang Akses)
+Route::middleware(['auth', 'role:waka_kurikulum'])->group(function () {
+
+    // Dashboard & Rekapan Jurnal Hari Ini
+    Route::get('/waka/dashboard', function () {
+        $now = \Carbon\Carbon::now('Asia/Jakarta');
+        $today = $now->toDateString();
+        $todayFormatted = $now->format('d M Y');
+
+        $daysMap = [
+            'Sunday'    => 'Minggu',
+            'Monday'    => 'Senin',
+            'Tuesday'   => 'Selasa',
+            'Wednesday' => 'Rabu',
+            'Thursday'  => 'Kamis',
+            'Friday'    => 'Jumat',
+            'Saturday'  => 'Sabtu',
+        ];
+        $currentDay = $daysMap[$now->format('l')] ?? $now->format('l');
+
+        $setting = \App\Models\Setting::first();
+        $rawCycle = $setting->active_cycle ?? 'putaran_1';
+        $activeCycle = ($rawCycle === 'putaran_2') ? 'Putaran 2' : 'Putaran 1';
+
+        $totalGuru = \App\Models\User::whereIn('role', ['guru', 'wali_kelas'])->count();
+        $totalKelas = \App\Models\SchoolClass::count();
+
+        $schedules = \App\Models\Schedule::with(['teacher', 'schoolClass', 'room'])
+            ->where('day', $currentDay)
+            ->where('cycle', $rawCycle)
+            ->orderBy('start_time', 'asc')
+            ->get();
+
+        $sudahIsiCount = 0;
+        $belumIsiCount = 0;
+
+        foreach ($schedules as $sched) {
+            $journal = \App\Models\Journal::where('schedule_id', $sched->id)
+                ->where('date', $today)
+                ->first();
+
+            $sched->journal = $journal;
+            $sched->is_filled = !is_null($journal);
+
+            if ($sched->is_filled) {
+                $sudahIsiCount++;
+            } else {
+                $belumIsiCount++;
+            }
+        }
+
+        return view('waka.dashboard', compact(
+            'totalGuru',
+            'totalKelas',
+            'activeCycle',
+            'currentDay',
+            'todayFormatted',
+            'schedules',
+            'sudahIsiCount',
+            'belumIsiCount'
+        ));
+    });
+
+    // Rekapitulasi Semester & Cetak
+    Route::get('/waka/recap', [\App\Http\Controllers\Web\RecapController::class, 'index'])->name('waka.recap.index');
+    Route::get('/waka/recap/print', [\App\Http\Controllers\Web\RecapController::class, 'print'])->name('waka.recap.print');
+
+    // Profil & Edit Akun Waka Kurikulum
+    Route::get('/waka/profile', [UserController::class, 'editProfile'])->name('waka.profile.edit');
+    Route::put('/waka/profile', [UserController::class, 'updateProfile'])->name('waka.profile.update');
+
+    // Import & Template Data Siswa (Excel/CSV)
+    Route::get('/waka/users/template/siswa', [UserController::class, 'downloadTemplate'])->name('waka.users.template');
+    Route::post('/waka/users/import/siswa', [UserController::class, 'importStudents'])->name('waka.users.import');
+
+    // Import & Template Data Guru Pegawai (Multi-File: Excel, CSV, TSV, PDF, TXT, JSON)
+    Route::get('/waka/users/template/guru', [UserController::class, 'downloadTeacherTemplate'])->name('waka.users.template.guru');
+    Route::post('/waka/users/import/guru', [UserController::class, 'importTeachers'])->name('waka.users.import.guru');
+
+    // Kenaikan Kelas & Kelulusan Siswa
+    Route::get('/waka/promotions', [PromotionController::class, 'index'])->name('waka.promotions.index');
+    Route::post('/waka/promotions/process', [PromotionController::class, 'process'])->name('waka.promotions.process');
+    Route::post('/waka/promotions/bulk', [PromotionController::class, 'bulkProcess'])->name('waka.promotions.bulk');
+    Route::post('/waka/promotions/{id}/restore', [PromotionController::class, 'restoreAlumni'])->name('waka.promotions.restore');
+
+    // Kelola Data Pengguna (CRUD)
+    Route::resource('/waka/users', UserController::class)->names([
+        'index'   => 'waka.users.index',
+        'create'  => 'waka.users.create',
+        'store'   => 'waka.users.store',
+        'edit'    => 'waka.users.edit',
+        'update'  => 'waka.users.update',
+        'destroy' => 'waka.users.destroy',
+    ]);
+
+    // Jadwal Pelajaran (Import Excel, CRUD, Setting Putaran)
+    Route::get('/waka/schedules/template', [\App\Http\Controllers\Web\ScheduleController::class, 'downloadTemplate'])->name('waka.schedules.template');
+    Route::post('/waka/schedules/import', [\App\Http\Controllers\Web\ScheduleController::class, 'importSchedules'])->name('waka.schedules.import');
+    Route::get('/waka/schedules', [\App\Http\Controllers\Web\ScheduleController::class, 'index'])->name('waka.schedules.index');
+    Route::post('/waka/schedules', [\App\Http\Controllers\Web\ScheduleController::class, 'store'])->name('waka.schedules.store');
+    Route::delete('/waka/schedules/{id}', [\App\Http\Controllers\Web\ScheduleController::class, 'destroy'])->name('waka.schedules.destroy');
+
+    // Pengaturan Putaran & Lock Schedule
+    Route::post('/waka/settings', [SettingController::class, 'update'])->name('waka.settings.update');
+    Route::get('/waka/settings', fn() => redirect('/waka/schedules'));
+
+    // Master Data (Ruangan & Kelas & Multi-File Import)
+    Route::get('/waka/master', [MasterDataController::class, 'index'])->name('master.index');
+    Route::get('/waka/master/template', [MasterDataController::class, 'downloadTemplate'])->name('master.template');
+    Route::post('/waka/master/import', [MasterDataController::class, 'importMaster'])->name('master.import');
+    Route::post('/waka/master/room', [MasterDataController::class, 'storeRoom'])->name('room.store');
+    Route::post('/waka/master/class', [MasterDataController::class, 'storeClass'])->name('class.store');
+    Route::put('/waka/master/class/{class}', [MasterDataController::class, 'updateClass'])->name('class.update');
+
+    // Notifikasi / Reminder Waka ke Guru
+    Route::post('/waka/reminders/send', [ReminderController::class, 'store'])->name('reminders.store');
 });
