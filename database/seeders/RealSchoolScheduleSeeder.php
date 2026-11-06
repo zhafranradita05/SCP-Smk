@@ -121,40 +121,60 @@ class RealSchoolScheduleSeeder extends Seeder
         ];
         $teachers = [];
         foreach ($teachersData as $key => $t) {
-            $user = User::updateOrCreate(
-                ['username' => $t['username']],
-                [
+            $user = User::where('email', $t['email'])
+                ->orWhere('username', $t['username'])
+                ->first();
+
+            if ($user) {
+                $user->update([
                     'name'       => $t['name'],
+                    'identifier' => $t['identifier'],
+                    'role'       => 'guru',
+                ]);
+            } else {
+                $user = User::create([
+                    'name'       => $t['name'],
+                    'username'   => $t['username'],
                     'email'      => $t['email'],
                     'password'   => Hash::make('password123'),
                     'role'       => 'guru',
                     'identifier' => $t['identifier'],
                     'phone'      => '08' . rand(1111111111, 9999999999),
-                ]
-            );
+                ]);
+            }
             $teachers[$key] = $user;
         }
 
         // 4. Pastikan ada Siswa di Kelas XII RPL 2 untuk login mobile
         $siswaRpl2 = User::where('class_id', $class->id)->where('role', 'siswa')->first();
         if (!$siswaRpl2) {
-            User::create([
-                'name'       => 'Muhammad Rizky Pratama',
-                'username'   => 'siswa_rpl2',
-                'email'      => 'siswa_rpl2@sekolah.com',
-                'password'   => Hash::make('password123'),
-                'role'       => 'siswa',
-                'class_id'   => $class->id,
-                'identifier' => '1202001',
-                'phone'      => '081234567890',
-            ]);
+            $siswaRpl2 = User::where('email', 'siswa_rpl2@sekolah.com')
+                ->orWhere('username', 'siswa_rpl2')
+                ->first();
+
+            if (!$siswaRpl2) {
+                User::create([
+                    'name'       => 'Muhammad Rizky Pratama',
+                    'username'   => 'siswa_rpl2',
+                    'email'      => 'siswa_rpl2@sekolah.com',
+                    'password'   => Hash::make('password123'),
+                    'role'       => 'siswa',
+                    'class_id'   => $class->id,
+                    'identifier' => '1202001',
+                    'phone'      => '081234567890',
+                ]);
+            }
         }
 
         // Akun Siswa Budi Santoso (XII RPL 2)
-        User::firstOrCreate(
-            ['username' => 'budi_santoso'],
-            [
+        $budiSantoso = User::where('email', 'budi_santoso@sekolah.com')
+            ->orWhere('username', 'budi_santoso')
+            ->first();
+
+        if (!$budiSantoso) {
+            User::create([
                 'name'       => 'Budi Santoso',
+                'username'   => 'budi_santoso',
                 'email'      => 'budi_santoso@sekolah.com',
                 'password'   => Hash::make('password123'),
                 'role'       => 'siswa',
@@ -162,8 +182,8 @@ class RealSchoolScheduleSeeder extends Seeder
                 'identifier' => '1202002',
                 'phone'      => '081234567891',
                 'status'     => 'aktif',
-            ]
-        );
+            ]);
+        }
 
         // Hapus jadwal kelas XII RPL 2 lama agar tidak duplikat
         Schedule::where('class_id', $class->id)->delete();

@@ -76,7 +76,11 @@ Route::get('deploy-migrate-{secret}', function (Request $request, $secret) {
             $seedOutput = trim(Artisan::output());
         }
         
-        Artisan::call('storage:link');
+        try {
+            Artisan::call('storage:link');
+        } catch (\Throwable $th) {
+            // Abaikan jika symlink sudah ada atau fungsi symlink dibatasi di shared hosting
+        }
         Artisan::call('optimize:clear');
 
         return response()->json([

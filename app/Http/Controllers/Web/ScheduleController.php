@@ -2093,7 +2093,7 @@ class ScheduleController extends Controller
 
         // Hitung total jadwal per Jurusan
         foreach ($allSchedules as $s) {
-            $sMajor = $s->schoolClass->major ?? 'UMUM';
+            $sMajor = $s->schoolClass?->major ?? 'UMUM';
             if (isset($majors[$sMajor])) {
                 $majors[$sMajor]['count']++;
             }
