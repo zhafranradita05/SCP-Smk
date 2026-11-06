@@ -50,16 +50,23 @@ class TeacherDashboardController extends Controller
             ? "Guru Pengajar & Wali Kelas {$homeroomClass->name}"
             : ($user->role === 'wali_kelas' ? "Guru Pengajar & Wali Kelas" : "Guru Pengajar");
 
-        // Ambil jadwal mengajar guru ini HARI INI pada siklus aktif
-        $myActiveSchedulesToday = Schedule::with(['schoolClass', 'room'])
-            ->where('teacher_id', $user->id)
+        // Ambil jadwal mengajar guru ini HARI INI pada siklus aktif (dan jadwal kelas binaan jika wali kelas)
+        $myActiveSchedulesToday = Schedule::with(['schoolClass', 'room', 'teacher'])
             ->where('day', $currentDay)
             ->where('cycle', $activeCycle)
+            ->where(function ($q) use ($user, $homeroomClass) {
+                $q->where('teacher_id', $user->id);
+                if ($homeroomClass) {
+                    $q->orWhere('class_id', $homeroomClass->id);
+                }
+            })
             ->orderBy('start_time')
             ->get();
 
+        // Cek apakah guru sendiri memiliki sesi mengajar hari ini untuk status Jurnal
+        $myOwnTeachingToday = $myActiveSchedulesToday->where('teacher_id', $user->id);
         $hasScheduleToday = $myActiveSchedulesToday->isNotEmpty();
-        $isJournalActive = $hasScheduleToday;
+        $isJournalActive = $myOwnTeachingToday->isNotEmpty();
 
         $totalSessions = $myActiveSchedulesToday->count();
         $totalHours = 0;
@@ -81,24 +88,28 @@ class TeacherDashboardController extends Controller
                 }
 
                 $timeRange = substr($sched->start_time, 0, 5) . ' - ' . substr($sched->end_time, 0, 5);
+                $isMyTeaching = ($sched->teacher_id == $user->id);
 
                 $scheduleItems[] = [
-                    'id' => $sched->id,
-                    'subject' => $sched->subject,
-                    'class_name' => $sched->schoolClass->name ?? '-',
-                    'room_name' => $sched->room->name ?? 'Ruang Kelas',
-                    'day' => $sched->day,
-                    'cycle' => $sched->cycle,
-                    'start_time' => substr($sched->start_time, 0, 5),
-                    'end_time' => substr($sched->end_time, 0, 5),
-                    'time_range' => $timeRange,
-                    'status' => $status
+                    'id'             => $sched->id,
+                    'subject'        => $sched->subject,
+                    'class_name'     => $sched->schoolClass->name ?? '-',
+                    'room_name'      => $sched->room->name ?? 'Ruang Kelas',
+                    'teacher_name'   => $sched->teacher->name ?? 'Guru Pengajar',
+                    'is_my_teaching' => $isMyTeaching,
+                    'type_badge'     => $isMyTeaching ? 'Mengajar' : ($homeroomClass ? "Kelas {$homeroomClass->name}" : 'Kelas Binaan'),
+                    'day'            => $sched->day,
+                    'cycle'          => $sched->cycle,
+                    'start_time'     => substr($sched->start_time, 0, 5),
+                    'end_time'       => substr($sched->end_time, 0, 5),
+                    'time_range'     => $timeRange,
+                    'status'         => $status
                 ];
             }
 
-            // Reminders: Auto-check hanya jika guru memiliki jadwal mengajar aktif hari ini
+            // Reminders: Auto-check HANYA untuk sesi mengajar milik guru itu sendiri
             $todayDate = $now->toDateString();
-            foreach ($myActiveSchedulesToday as $mySched) {
+            foreach ($myOwnTeachingToday as $mySched) {
                 $startPlus30 = Carbon::parse($mySched->start_time)->addMinutes(30)->format('H:i:s');
                 $currentTimeStr = $now->format('H:i:s');
 
@@ -142,8 +153,13 @@ class TeacherDashboardController extends Controller
         }
 
         // Ambil seluruh jadwal mingguan guru (Senin - Jumat) untuk kedua siklus
-        $allTeacherSchedules = Schedule::with(['schoolClass', 'room'])
-            ->where('teacher_id', $user->id)
+        $allTeacherSchedules = Schedule::with(['schoolClass', 'room', 'teacher'])
+            ->where(function ($q) use ($user, $homeroomClass) {
+                $q->where('teacher_id', $user->id);
+                if ($homeroomClass) {
+                    $q->orWhere('class_id', $homeroomClass->id);
+                }
+            })
             ->orderBy('start_time')
             ->get();
 
@@ -159,15 +175,22 @@ class TeacherDashboardController extends Controller
         foreach ($allTeacherSchedules as $sched) {
             $sDay = ucfirst(strtolower($sched->day));
             $sCycle = ($sched->cycle === 'putaran_2') ? 'putaran_2' : 'putaran_1';
+            $isMyTeaching = ($sched->teacher_id == $user->id);
+
             if (isset($weeklySchedules[$sCycle][$sDay])) {
                 $weeklySchedules[$sCycle][$sDay][] = [
-                    'id' => $sched->id,
-                    'subject' => $sched->subject,
-                    'class_name' => $sched->schoolClass->name ?? '-',
-                    'room_name' => $sched->room->name ?? 'Ruang Kelas',
-                    'start_time' => substr($sched->start_time, 0, 5),
-                    'end_time' => substr($sched->end_time, 0, 5),
-                    'time_range' => substr($sched->start_time, 0, 5) . ' - ' . substr($sched->end_time, 0, 5),
+                    'id'             => $sched->id,
+                    'subject'        => $sched->subject,
+                    'class_name'     => $sched->schoolClass->name ?? '-',
+                    'room_name'      => $sched->room->name ?? 'Ruang Kelas',
+                    'teacher_name'   => $sched->teacher->name ?? 'Guru Pengajar',
+                    'is_my_teaching' => $isMyTeaching,
+                    'type_badge'     => $isMyTeaching ? 'Mengajar' : ($homeroomClass ? "Kelas {$homeroomClass->name}" : 'Kelas Binaan'),
+                    'day'            => $sched->day,
+                    'cycle'          => $sched->cycle,
+                    'start_time'     => substr($sched->start_time, 0, 5),
+                    'end_time'       => substr($sched->end_time, 0, 5),
+                    'time_range'     => substr($sched->start_time, 0, 5) . ' - ' . substr($sched->end_time, 0, 5),
                 ];
             }
         }

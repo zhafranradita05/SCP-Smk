@@ -190,6 +190,28 @@ class DatabaseSeeder extends Seeder
                 'start_time' => '10:15:00',
                 'end_time'   => '12:45:00',
             ]);
+
+            Schedule::create([
+                'teacher_id' => $guruPengajar->id,
+                'class_id'   => $createdClasses['X RPL 1']->id,
+                'room_id'    => $roomRpl->id,
+                'subject'    => 'Pemrograman Web & Perangkat Bergerak',
+                'cycle'      => 'putaran_1',
+                'day'        => 'Jumat',
+                'start_time' => '07:15:00',
+                'end_time'   => '10:00:00',
+            ]);
+
+            Schedule::create([
+                'teacher_id' => $guruPengajar->id,
+                'class_id'   => $createdClasses['X RPL 1']->id,
+                'room_id'    => $roomRpl->id,
+                'subject'    => 'Basis Data & SQL',
+                'cycle'      => 'putaran_2',
+                'day'        => 'Jumat',
+                'start_time' => '07:15:00',
+                'end_time'   => '10:00:00',
+            ]);
         }
 
         // 11. Panggil Seeder Jadwal Nyata SMK Negeri 1 Bantul (XII RPL 2)
