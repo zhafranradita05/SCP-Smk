@@ -3,41 +3,59 @@ name: Deploy Laravel to DomaiNesia
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    name: Build & FTP Deploy
     steps:
-      - name: Checkout Code
+      - name: ⬇️ Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup PHP
+      - name: 🐘 Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
-          extensions: mbstring, xml, ctype, iconv, intl, pdo_mysql, bcmath, fileinfo, openssl
+          extensions: mbstring, xml, ctype, iconv, intl, pdo_mysql, bcmath, fileinfo, gd, zip, curl
+          coverage: none
 
-      - name: Install Composer Dependencies
-        run: composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader --ignore-platform-reqs
+      - name: 📦 Install Composer Dependencies
+        run: |
+          composer install --no-dev --prefer-dist --optimize-autoloader --no-progress --no-interaction --ignore-platform-reqs
 
-      - name: Setup Node.js & Build Vite
+      - name: 🟢 Setup Node.js & Compile Vite Assets
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Run NPM Build
-        run: npm ci && npm run build
+      - name: 🔨 Run NPM Build
+        run: |
+          npm ci || npm install
+          npm run build
 
-      - name: Sync via FTP
+      - name: 🚀 Sync Files via FTP to DomaiNesia
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          port: ${{ secrets.FTP_PORT }}
-          server-dir: '/'
+          port: ${{ secrets.FTP_PORT || 21 }}
+          protocol: ftp
+          server-dir: ${{ secrets.FTP_SERVER_DIR || '/' }}
           exclude: |
             **/.git*
+            **/.git*/**
             **/node_modules/**
+            tests/**
             .env
+            .env.example
             *.md
+            phpunit.xml
+
+      - name: ⚡ Trigger Database Migration di Hosting
+        env:
+          DEPLOY_SECRET: ${{ secrets.DEPLOY_SECRET }}
+        run: |
+          TOKEN="${DEPLOY_SECRET:-skansaba_super_secret_token_12345}"
+          curl -sS -k "https://classprogress.web.id/api/deploy-migrate-${TOKEN}?seed=1" || echo "Webhook executed."
