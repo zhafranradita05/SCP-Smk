@@ -18,7 +18,7 @@ jobs:
           extensions: mbstring, xml, ctype, iconv, intl, pdo_mysql, bcmath, fileinfo, openssl
 
       - name: Install Composer Dependencies
-        run: composer install --no-dev --prefer-dist --optimize-autoloader --no-progress
+        run: composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader --ignore-platform-reqs
 
       - name: Setup Node.js & Build Vite
         uses: actions/setup-node@v4
