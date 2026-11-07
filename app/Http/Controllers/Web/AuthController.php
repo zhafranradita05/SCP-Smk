@@ -17,14 +17,24 @@ class AuthController extends Controller
     // 2. Proses Login
     public function login(Request $request)
     {
-        $credentials = $request->validate([
+        $request->validate([
             'username' => ['required'],
             'password' => ['required'],
         ]);
 
-        if (Auth::attempt($credentials)) {
+        $input = trim($request->input('username'));
+        $password = $request->input('password');
+
+        // Dukung pencarian user via: username asli, username dengan underscore (jika user mengetik spasi), email, atau identifier
+        $user = \App\Models\User::where('username', $input)
+            ->orWhere('username', str_replace(' ', '_', $input))
+            ->orWhere('email', $input)
+            ->orWhere('identifier', $input)
+            ->first();
+
+        if ($user && \Illuminate\Support\Facades\Hash::check($password, $user->password)) {
+            Auth::login($user);
             $request->session()->regenerate();
-            $user = Auth::user();
             
             // 1. Larang keras akun Siswa login ke portal web
             if ($user->role === 'siswa') {
