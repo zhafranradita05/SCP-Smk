@@ -206,7 +206,15 @@ class PromotionController extends Controller
             return back()->with('error', 'Tidak ada siswa yang dipilih! Centang minimal 1 siswa untuk diproses.');
         }
 
-        DB::transaction(function () use ($request, $sourceClass, $selectedIds, $hasStatusCol) {
+        $allClasses = SchoolClass::all();
+        $stayedIds = array_values(array_diff($allStudentIds, $selectedIds));
+        $stayedReassignments = [];
+        $currentCounts = [];
+
+        DB::transaction(function () use (
+            $request, $sourceClass, $selectedIds, $stayedIds, $hasStatusCol, $allClasses,
+            &$stayedReassignments, &$currentCounts
+        ) {
             if ($request->action_type === 'promote') {
                 $targetClass = SchoolClass::findOrFail($request->target_class_id);
                 $updateData = ['class_id' => $targetClass->id];
@@ -217,6 +225,23 @@ class PromotionController extends Controller
                 User::whereIn('id', $selectedIds)
                     ->where('class_id', $sourceClass->id)
                     ->update($updateData);
+
+                // Siswa yang tidak dicentang (tinggal kelas): Otomatis dipindahkan ke rombel paralel yang memiliki kursi kosong (< 36 siswa)
+                if (!empty($stayedIds)) {
+                    $stayedStudents = User::whereIn('id', $stayedIds)->with('schoolClass')->get();
+                    foreach ($stayedStudents as $std) {
+                        $targetClassStayed = $this->findAvailableClassForStayedStudent($std, $allClasses, $hasStatusCol, $currentCounts);
+                        if ($targetClassStayed) {
+                            $oldClassName = $std->schoolClass ? $std->schoolClass->name : '-';
+                            if ($targetClassStayed->id !== $std->class_id) {
+                                $std->update(['class_id' => $targetClassStayed->id]);
+                                $stayedReassignments[] = "{$std->name} ({$oldClassName} &rarr; {$targetClassStayed->name})";
+                            } else {
+                                $stayedReassignments[] = "{$std->name} (tetap di {$targetClassStayed->name})";
+                            }
+                        }
+                    }
+                }
             } else {
                 // Aksi Luluskan Siswa: lepaskan class_id dan beri status lulus
                 $updateData = ['class_id' => null];
@@ -234,7 +259,7 @@ class PromotionController extends Controller
             $targetClass = SchoolClass::findOrFail($request->target_class_id);
             $msg = "Kenaikan kelas berhasil! {$selectedCount} siswa dari {$sourceClass->name} berhasil dinaikkan ke {$targetClass->name}.";
             if ($stayedCount > 0) {
-                $msg .= " ({$stayedCount} siswa yang tidak dicentang tetap tinggal di {$sourceClass->name}).";
+                $msg .= " ({$stayedCount} siswa yang tidak dicentang tinggal kelas dan otomatis dialokasikan ke rombel dengan kursi kosong maks 36 siswa: " . implode(', ', $stayedReassignments) . ").";
             }
         } else {
             $msg = "Kelulusan berhasil diproses! {$selectedCount} siswa dari {$sourceClass->name} resmi dinyatakan LULUS (Alumni).";
@@ -282,11 +307,14 @@ class PromotionController extends Controller
         $promoted11to12Count = 0;
         $promoted10to11Count = 0;
         $unmappedClasses = [];
+        $stayedReassignments = [];
+        $currentCounts = [];
 
         DB::transaction(function () use (
             $grade12Classes, $grade11Classes, $grade10Classes, $allClasses,
             $stayedStudentIds, $hasStatusCol,
-            &$graduatedCount, &$promoted11to12Count, &$promoted10to11Count, &$unmappedClasses
+            &$graduatedCount, &$promoted11to12Count, &$promoted10to11Count, &$unmappedClasses,
+            &$stayedReassignments, &$currentCounts
         ) {
             // TAHAP 1: Luluskan Siswa Kelas XII (Dieksekusi pertama agar tidak tertimpa perpindahan siswa XI)
             foreach ($grade12Classes as $c12) {
@@ -376,6 +404,23 @@ class PromotionController extends Controller
                     $unmappedClasses[] = $name;
                 }
             }
+
+            // TAHAP 4: Alokasi Siswa Tinggal Kelas Berdasarkan Kursi Kosong (Kapasitas Maksimal 36 Siswa)
+            if (!empty($stayedStudentIds)) {
+                $stayedStudents = User::whereIn('id', $stayedStudentIds)->with('schoolClass')->get();
+                foreach ($stayedStudents as $std) {
+                    $targetClassStayed = $this->findAvailableClassForStayedStudent($std, $allClasses, $hasStatusCol, $currentCounts);
+                    if ($targetClassStayed) {
+                        $oldClassName = $std->schoolClass ? $std->schoolClass->name : '-';
+                        if ($targetClassStayed->id !== $std->class_id) {
+                            $std->update(['class_id' => $targetClassStayed->id]);
+                            $stayedReassignments[] = "{$std->name} ({$oldClassName} &rarr; {$targetClassStayed->name})";
+                        } else {
+                            $stayedReassignments[] = "{$std->name} (tetap di {$targetClassStayed->name})";
+                        }
+                    }
+                }
+            }
         });
 
         $totalSuccess = $graduatedCount + $promoted11to12Count + $promoted10to11Count;
@@ -387,7 +432,7 @@ class PromotionController extends Controller
             . "{$promoted10to11Count} siswa Kelas X naik ke XI.";
 
         if ($stayedCount > 0) {
-            $msg .= " ({$stayedCount} siswa yang ditandai tinggal kelas tetap dipertahankan di rombel asalnya).";
+            $msg .= " ({$stayedCount} siswa tinggal kelas dialokasikan ke rombel dengan kursi kosong maks 36 siswa: " . implode(', ', $stayedReassignments) . ").";
         }
 
         if (!empty($unmappedClasses)) {
@@ -419,5 +464,159 @@ class PromotionController extends Controller
         $student->update($updateData);
 
         return back()->with('success', "Status alumni '{$student->name}' berhasil dibatalkan dan dimasukkan kembali ke kelas {$targetClass->name}.");
+    }
+
+    /**
+     * Ekspor Data Siswa Lulus / Alumni ke Format CSV (Bisa dibuka langsung di Excel)
+     */
+    public function exportAlumni()
+    {
+        $hasStatusCol = Schema::hasColumn('users', 'status');
+
+        $query = User::where('role', 'siswa');
+        if ($hasStatusCol) {
+            $query->where('status', 'lulus');
+        } else {
+            $query->whereNull('class_id');
+        }
+
+        $alumni = $query->with('schoolClass')->orderBy('name', 'asc')->get();
+
+        $filename = 'Arsip_Alumni_Siswa_' . date('Ymd_His') . '.csv';
+
+        $headers = [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => "attachment; filename=\"$filename\"",
+            'Pragma' => 'no-cache',
+            'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
+            'Expires' => '0',
+        ];
+
+        $callback = function () use ($alumni) {
+            $file = fopen('php://output', 'w');
+            // UTF-8 BOM agar terbaca sempurna di Microsoft Excel
+            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
+
+            fputcsv($file, [
+                'No',
+                'NISN / Identifier',
+                'Nama Lengkap',
+                'Username',
+                'Email',
+                'No. Telepon',
+                'Status',
+                'Tanggal Kelulusan / Update Terakhir'
+            ]);
+
+            $no = 1;
+            foreach ($alumni as $student) {
+                fputcsv($file, [
+                    $no++,
+                    $student->identifier ?? '-',
+                    $student->name,
+                    $student->username,
+                    $student->email ?? '-',
+                    $student->phone ?? '-',
+                    strtoupper($student->status ?? 'LULUS'),
+                    $student->updated_at ? $student->updated_at->format('d/m/Y H:i') : '-',
+                ]);
+            }
+
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    /**
+     * Mencari rombel yang tersedia untuk siswa tinggal kelas berdasarkan sisa kursi (maksimal 36 siswa per rombel)
+     */
+    protected function findAvailableClassForStayedStudent($student, $allClasses, $hasStatusCol, array &$currentCounts)
+    {
+        $currentClass = $student->schoolClass;
+        if (!$currentClass) {
+            return null;
+        }
+
+        $className = trim($currentClass->name);
+
+        // 1. Ekstrak jenjang kelas (X, XI, XII)
+        $grade = null;
+        if (preg_match('/^(XII|12)\b/i', $className)) {
+            $grade = 'XII';
+        } elseif (preg_match('/^(XI|11)\b/i', $className)) {
+            $grade = 'XI';
+        } elseif (preg_match('/^(X|10)\b/i', $className)) {
+            $grade = 'X';
+        }
+
+        if (!$grade) {
+            return $currentClass;
+        }
+
+        // 2. Ekstrak jurusan / keahlian (misal RPL, TKJ, DKV, MP, AK, dst.)
+        $major = null;
+        if (preg_match('/^(X|XI|XII|10|11|12)\s+([A-Za-z]+)/i', $className, $matches)) {
+            $major = strtoupper($matches[2]);
+        }
+
+        // 3. Filter semua kelas pada jenjang yang sama
+        $candidateClasses = $allClasses->filter(function ($c) use ($grade) {
+            $target = ($grade === 'XII') ? '(XII|12)' : (($grade === 'XI') ? '(XI|11)' : '(X|10)');
+            return preg_match('/^'.$target.'\b/i', trim($c->name));
+        });
+
+        // Hitung kuota terisi untuk setiap kelas kandidat
+        foreach ($candidateClasses as $c) {
+            if (!isset($currentCounts[$c->id])) {
+                $q = User::where('role', 'siswa')->where('class_id', $c->id);
+                if ($hasStatusCol) {
+                    $q->where(function ($sq) {
+                        $sq->where('status', 'aktif')->orWhereNull('status');
+                    });
+                }
+                $currentCounts[$c->id] = $q->count();
+            }
+        }
+
+        // Kandidat 1: Rombel paralel di jurusan yang sama (misal RPL)
+        $sameMajorClasses = $candidateClasses->filter(function ($c) use ($major) {
+            if (!$major) return true;
+            return stripos(trim($c->name), $major) !== false;
+        });
+
+        // Cari rombel paralel lain (selain kelas asal) yang kursinya masih tersedia (< 36)
+        $otherParallelWithSeats = $sameMajorClasses
+            ->filter(fn($c) => $c->id !== $currentClass->id && ($currentCounts[$c->id] ?? 0) < 36)
+            ->sortBy(fn($c) => $currentCounts[$c->id] ?? 0);
+
+        $chosenClass = null;
+
+        if ($otherParallelWithSeats->isNotEmpty()) {
+            // Pindahkan ke rombel paralel lain yang masih memiliki sisa kursi terbanyak
+            $chosenClass = $otherParallelWithSeats->first();
+        } elseif (($currentCounts[$currentClass->id] ?? 0) < 36) {
+            // Jika rombel paralel lain penuh tapi kelas asal masih ada kursi (< 36), tetap di kelas asal
+            $chosenClass = $currentClass;
+        } else {
+            // Jika semua rombel jurusan tersebut penuh (>= 36), cari kelas apapun di jenjang tersebut yang < 36
+            $anyClassWithSeats = $candidateClasses
+                ->filter(fn($c) => ($currentCounts[$c->id] ?? 0) < 36)
+                ->sortBy(fn($c) => $currentCounts[$c->id] ?? 0);
+
+            if ($anyClassWithSeats->isNotEmpty()) {
+                $chosenClass = $anyClassWithSeats->first();
+            } else {
+                // Jika seluruh sekolah penuh, pilih kelas dengan siswa paling sedikit
+                $chosenClass = $candidateClasses->sortBy(fn($c) => $currentCounts[$c->id] ?? 999)->first() ?: $currentClass;
+            }
+        }
+
+        if ($chosenClass) {
+            // Catat kursi terisi bertambah 1
+            $currentCounts[$chosenClass->id] = ($currentCounts[$chosenClass->id] ?? 0) + 1;
+        }
+
+        return $chosenClass;
     }
 }

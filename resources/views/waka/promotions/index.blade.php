@@ -3,10 +3,16 @@
 @section('title', 'Kenaikan Kelas & Kelulusan Siswa')
 
 @section('header_actions')
-    <a href="{{ route('waka.users.index', ['role' => 'siswa']) }}" class="inline-flex items-center px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition space-x-2">
-        <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
-        <span>Kembali ke Data Siswa</span>
-    </a>
+    <div class="flex items-center space-x-2">
+        <a href="{{ route('waka.promotions.export_alumni') }}" class="inline-flex items-center px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold rounded-lg transition space-x-1.5 shadow-xs">
+            <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+            <span>Ekspor Arsip Alumni</span>
+        </a>
+        <a href="{{ route('waka.users.index', ['role' => 'siswa']) }}" class="inline-flex items-center px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition space-x-2">
+            <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+            <span>Kembali ke Data Siswa</span>
+        </a>
+    </div>
 @endsection
 
 @section('content')
@@ -449,7 +455,7 @@
     <!-- ========================================================================= -->
     @if($recentAlumni->isNotEmpty())
         <div class="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-xs space-y-4">
-            <div class="flex items-center justify-between">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                     <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2">
                         <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222"></path></svg>
@@ -457,6 +463,10 @@
                     </h3>
                     <p class="text-xs text-slate-500">Siswa yang sudah lulus tidak muncul lagi di presensi harian kelas.</p>
                 </div>
+                <a href="{{ route('waka.promotions.export_alumni') }}" class="inline-flex items-center px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold rounded-lg transition space-x-1.5 shadow-xs shrink-0">
+                    <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    <span>Unduh Arsip Alumni (CSV/Excel)</span>
+                </a>
             </div>
 
             <div class="overflow-x-auto border border-slate-200 rounded-xl">
