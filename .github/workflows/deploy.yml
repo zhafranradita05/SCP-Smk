@@ -23,6 +23,8 @@ jobs:
       - name: 📦 Install Composer Dependencies
         run: |
           composer install --no-dev --prefer-dist --optimize-autoloader --no-progress --no-interaction --ignore-platform-reqs
+          # Patch bug Null byte in regex pada Laravel framework Str.php
+          sed -i 's/" \\n\\r\\t\\v\\0"/" \\n\\r\\t\\v"/g' vendor/laravel/framework/src/Illuminate/Support/Str.php
 
       - name: 🟢 Setup Node.js & Compile Vite Assets
         uses: actions/setup-node@v4

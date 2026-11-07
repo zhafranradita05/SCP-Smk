@@ -102,9 +102,10 @@ class RealSchoolScheduleSeeder extends Seeder
             ],
             'rya' => [
                 'name'       => 'RYAWIDYANINGTYAS, S.Pd',
-                'username'   => 'ryawidyaningtyas',
+                'username'   => 'ryawidya',
                 'email'      => 'rya@sekolah.com',
                 'identifier' => '89',
+                'role'       => 'guru_bk',
             ],
             'widodo' => [
                 'name'       => 'WIDODO, S.Pd.',
@@ -125,11 +126,13 @@ class RealSchoolScheduleSeeder extends Seeder
                 ->orWhere('username', $t['username'])
                 ->first();
 
+            $targetRole = $t['role'] ?? ($user && in_array($user->role, ['guru_bk', 'wali_kelas']) ? $user->role : 'guru');
+
             if ($user) {
                 $user->update([
                     'name'       => $t['name'],
                     'identifier' => $t['identifier'],
-                    'role'       => 'guru',
+                    'role'       => $targetRole,
                 ]);
             } else {
                 $user = User::create([
@@ -137,7 +140,7 @@ class RealSchoolScheduleSeeder extends Seeder
                     'username'   => $t['username'],
                     'email'      => $t['email'],
                     'password'   => Hash::make('password123'),
-                    'role'       => 'guru',
+                    'role'       => $targetRole,
                     'identifier' => $t['identifier'],
                     'phone'      => '08' . rand(1111111111, 9999999999),
                 ]);
