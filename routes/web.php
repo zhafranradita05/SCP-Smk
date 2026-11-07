@@ -16,6 +16,7 @@ Route::post('/login', [AuthController::class, 'login']);
 
 // Lupa Password (Belum Login)
 Route::get('/forgot-password', [ForgotPasswordController::class, 'showForm'])->name('password.request');
+Route::post('/forgot-password/send-otp', [ForgotPasswordController::class, 'sendOtp'])->name('password.send_otp');
 Route::post('/forgot-password', [ForgotPasswordController::class, 'resetPassword'])->name('password.update');
 
 // 2. Rute Cetak Laporan Rekapitulasi Izin Siswa (Wali Kelas & Guru BK: mendukung Web Session & Token Mobile)
