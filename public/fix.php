@@ -3,7 +3,21 @@
 header('Content-Type: text/plain; charset=utf-8');
 echo "=== ClassProgress Diagnostic & Auto-Fix Tool ===\n\n";
 
-// 1. Patch Str.php
+// 1. Rename Auth -> auth jika diperlukan
+$viewsPaths = [
+    __DIR__ . '/resources/views',
+    __DIR__ . '/../resources/views',
+];
+foreach ($viewsPaths as $vp) {
+    if (is_dir($vp . '/Auth') && !is_dir($vp . '/auth')) {
+        rename($vp . '/Auth', $vp . '/auth');
+        echo "[OK] Berhasil rename folder '$vp/Auth' menjadi '$vp/auth'!\n";
+    } elseif (is_dir($vp . '/auth')) {
+        echo "[INFO] Folder auth sudah huruf kecil di: $vp/auth\n";
+    }
+}
+
+// 2. Patch Str.php
 $paths = [
     __DIR__ . '/vendor/laravel/framework/src/Illuminate/Support/Str.php',
     __DIR__ . '/../vendor/laravel/framework/src/Illuminate/Support/Str.php',
@@ -24,11 +38,7 @@ foreach ($paths as $path) {
     }
 }
 
-if (!$patched) {
-    echo "[WARN] File Str.php tidak ditemukan di path vendor.\n";
-}
-
-// 2. Clear view caches
+// 3. Clear view caches
 $viewsPath = __DIR__ . '/storage/framework/views';
 if (!is_dir($viewsPath)) {
     $viewsPath = __DIR__ . '/../storage/framework/views';

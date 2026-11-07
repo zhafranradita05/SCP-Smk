@@ -14,6 +14,13 @@ if (file_exists($strFile)) {
     }
 }
 
+// Auto-rename folder Auth ke auth (Linux case sensitivity)
+$authUpper = __DIR__.'/../resources/views/Auth';
+$authLower = __DIR__.'/../resources/views/auth';
+if (is_dir($authUpper) && !is_dir($authLower)) {
+    @rename($authUpper, $authLower);
+}
+
 // Determine if the application is in maintenance mode...
 if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php')) {
     require $maintenance;
