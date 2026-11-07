@@ -21,6 +21,19 @@ if (is_dir($authUpper) && !is_dir($authLower)) {
     @rename($authUpper, $authLower);
 }
 
+// Auto-fix format MAIL_PASSWORD dengan spasi di file .env
+$envFile = __DIR__.'/../.env';
+if (file_exists($envFile)) {
+    $envContent = @file_get_contents($envFile);
+    if ($envContent && preg_match('/^MAIL_PASSWORD=([^\r\n"]*\s+[^\r\n"]*)$/m', $envContent, $m)) {
+        $cleanPass = str_replace(' ', '', trim($m[1]));
+        $newEnv = preg_replace('/^MAIL_PASSWORD=.*$/m', 'MAIL_PASSWORD=' . $cleanPass, $envContent, 1);
+        if ($newEnv) {
+            @file_put_contents($envFile, $newEnv);
+        }
+    }
+}
+
 // Determine if the application is in maintenance mode...
 if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php')) {
     require $maintenance;

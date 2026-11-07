@@ -57,6 +57,7 @@ class ForgotPasswordController extends Controller
 
         // Kirim email OTP menggunakan template email resmi SCP
         $mailSent = false;
+        $mailError = null;
         try {
             Mail::send('emails.otp', ['name' => $user->name, 'otp' => $otp], function ($message) use ($user) {
                 $message->to($user->email)
@@ -64,7 +65,12 @@ class ForgotPasswordController extends Controller
             });
             $mailSent = true;
         } catch (\Throwable $e) {
-            Log::error("Gagal mengirim email OTP ke {$user->email}: " . $e->getMessage());
+            $mailError = $e->getMessage();
+            Log::error("Gagal mengirim email OTP ke {$user->email}: " . $mailError);
+        }
+
+        if (!$mailSent && config('mail.default') !== 'log') {
+            return back()->with('error', 'Gagal mengirim email OTP via Gmail: ' . $mailError)->withInput();
         }
 
         $successMessage = "Kode OTP 6-digit telah dikirim ke <strong>{$user->email}</strong>. Silakan periksa kotak masuk atau folder spam Gmail Anda.";
