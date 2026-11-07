@@ -5,6 +5,15 @@ use Illuminate\Http\Request;
 
 define('LARAVEL_START', microtime(true));
 
+// Auto-patch bug PCRE regex "Null byte in regex" pada Str.php di hosting Linux
+$strFile = __DIR__.'/../vendor/laravel/framework/src/Illuminate/Support/Str.php';
+if (file_exists($strFile)) {
+    $strCode = file_get_contents($strFile);
+    if (strpos($strCode, '" \n\r\t\v\0"') !== false) {
+        @file_put_contents($strFile, str_replace('" \n\r\t\v\0"', '" \n\r\t\v"', $strCode));
+    }
+}
+
 // Determine if the application is in maintenance mode...
 if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php')) {
     require $maintenance;
