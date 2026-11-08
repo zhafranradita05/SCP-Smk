@@ -39,6 +39,13 @@
 <body class="min-h-full flex items-center justify-center p-4 bg-slate-50 text-slate-900 antialiased">
 
     <div class="w-full max-w-md bg-white rounded-3xl shadow-xl shadow-slate-200/50 p-8 sm:p-10 border border-slate-200/90">
+        <div class="mb-4">
+            <a href="{{ url('/') }}" class="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-blue-600 font-semibold transition">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                <span>← Kembali ke Halaman Utama</span>
+            </a>
+        </div>
+
         <div class="text-center mb-8">
             <div class="inline-flex items-center justify-center mb-4">
                 <img src="{{ asset('images/logo.png') }}?v=2" alt="Logo SCP" class="w-24 h-24 object-contain drop-shadow-md">
