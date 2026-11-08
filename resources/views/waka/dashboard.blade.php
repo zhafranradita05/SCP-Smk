@@ -32,7 +32,7 @@
                 </div>
                 <div class="flex items-baseline gap-2">
                     <p class="text-2xl font-heading font-extrabold text-slate-900">{{ $activeCycle }}</p>
-                    <span class="text-xs font-medium text-slate-500">({{ $rawCycle === 'putaran_2' ? 'Normatif & Adaptif' : 'Produktif' }})</span>
+                    <span class="text-xs font-medium text-slate-500">({{ ($activeCycle ?? '') === 'Putaran 2' ? 'Normatif & Adaptif' : 'Produktif' }})</span>
                 </div>
             </div>
 

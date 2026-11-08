@@ -103,6 +103,7 @@ Route::middleware(['auth', 'role:waka_kurikulum', 'active.session'])->group(func
             'totalKelas',
             'setting',
             'rotationInfo',
+            'rawCycle',
             'activeCycle',
             'currentDay',
             'todayFormatted',
