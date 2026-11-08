@@ -35,7 +35,7 @@
             <hr class="my-6 border-[#E8E0D5]">
 
             <!-- Lock Schedule -->
-            <div class="mb-8">
+            <div class="mb-6">
                 <label class="flex items-start gap-3 cursor-pointer p-4 bg-[#FBF9F5] border border-[#E8E0D5] rounded-xl">
                     <div class="flex items-center h-6">
                         <input type="checkbox" name="is_schedule_locked" value="1" {{ $setting->is_schedule_locked ? 'checked' : '' }} class="w-5 h-5 text-[#A93B2C] border-[#E8E0D5] rounded focus:ring-[#A93B2C]">
@@ -45,6 +45,15 @@
                         <span class="block text-sm text-[#795548] mt-1">Jika diaktifkan, maka jadwal tidak dapat ditambah atau dihapus. Guru tetap dapat mengisi jurnal harian untuk jadwal yang aktif.</span>
                     </div>
                 </label>
+            </div>
+
+            <hr class="my-6 border-[#E8E0D5]">
+
+            <!-- Link Alternatif Unduh APK (Opsional) -->
+            <div class="mb-8">
+                <label class="block text-[#2C1D11] font-bold mb-1">Link Eksternal Unduh APK Mobile (Opsional)</label>
+                <p class="text-sm text-[#795548] mb-3">Masukkan link Google Drive atau Cloud Storage jika ingin mendistribusikan APK dari penyimpanan eksternal. Jika dikosongkan, tombol unduh di website akan langsung mengunduh file APK yang ada di server hosting.</p>
+                <input type="url" name="apk_download_url" value="{{ old('apk_download_url', $setting->apk_download_url ?? '') }}" placeholder="Contoh: https://drive.google.com/uc?export=download&id=..." class="w-full px-4 py-3 border border-[#E8E0D5] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#5D4037]">
             </div>
 
             <button type="submit" class="bg-[#5D4037] hover:bg-[#4E342E] text-white font-bold py-3 px-6 rounded-xl transition duration-200 shadow-sm">

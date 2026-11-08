@@ -55,6 +55,10 @@ class SettingController extends Controller
             $updateData['active_semester'] = $request->active_semester;
         }
 
+        if ($request->has('apk_download_url')) {
+            $updateData['apk_download_url'] = $request->apk_download_url;
+        }
+
         $setting->update($updateData);
 
         return redirect()->back()->with('success', 'Pengaturan Siklus 2 Mingguan & Tahun Ajaran berhasil disimpan!');

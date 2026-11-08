@@ -19,15 +19,36 @@ Route::post('/login', [AuthController::class, 'login']);
 
 // Rute Unduh APK Mobile SCP (Android)
 Route::get('/download/app', function () {
+    // 1. Cek jika Waka mengonfigurasi URL download eksternal (misal: Google Drive / Cloud Storage)
+    $setting = \App\Models\Setting::first();
+    if ($setting && !empty($setting->apk_download_url)) {
+        return redirect()->away($setting->apk_download_url);
+    }
+
+    // 2. Cek file APK fisik di server hosting (public/downloads/)
     $apkPath = public_path('downloads/SCP-Presensi.apk');
     if (file_exists($apkPath)) {
-        return response()->download($apkPath, 'SCP-Presensi-Mobile.apk');
+        return response()->download($apkPath, 'SCP-Presensi-Mobile.apk', [
+            'Content-Type' => 'application/vnd.android.package-archive',
+        ]);
     }
-    // Cek lokasi file pada proyek scp_mobile lokal
-    $localApk = base_path('../scp_mobile/build/app/outputs/flutter-apk/app-debug.apk');
-    if (file_exists($localApk)) {
-        return response()->download($localApk, 'SCP-Presensi-Mobile.apk');
+
+    // 3. Fallback jika testing di localhost / dev environment
+    $localReleaseArm64 = base_path('../scp_mobile/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk');
+    if (file_exists($localReleaseArm64)) {
+        return response()->download($localReleaseArm64, 'SCP-Presensi-Mobile.apk');
     }
+
+    $localRelease = base_path('../scp_mobile/build/app/outputs/flutter-apk/app-release.apk');
+    if (file_exists($localRelease)) {
+        return response()->download($localRelease, 'SCP-Presensi-Mobile.apk');
+    }
+
+    $localDebug = base_path('../scp_mobile/build/app/outputs/flutter-apk/app-debug.apk');
+    if (file_exists($localDebug)) {
+        return response()->download($localDebug, 'SCP-Presensi-Mobile.apk');
+    }
+
     return redirect('/#download-app');
 })->name('app.download');
 
