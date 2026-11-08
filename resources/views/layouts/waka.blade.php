@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', 'SCP') - Sistem Manajemen Waka</title>
 
     <!-- Favicon SCP -->
@@ -253,6 +254,18 @@
                 <!-- Right Side: User Menu & Mobile Trigger -->
                 <div class="flex items-center space-x-3">
                     
+                    <!-- Indikator Sesi Aktif Waka (Auto-Logout 10 Menit Tidak Aktif) -->
+                    <div id="waka-session-badge" 
+                         class="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 transition-all duration-300 shadow-2xs select-none cursor-pointer"
+                         title="Sesi aktif Waka. Otomatis diperbarui saat ada aktivitas mouse/keyboard/klik. Klik untuk perpanjang langsung.">
+                        <span class="relative flex h-2 w-2">
+                            <span id="session-ping-dot" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                            <span id="session-dot" class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </span>
+                        <span class="hidden sm:inline text-slate-500 font-normal">Sesi:</span>
+                        <span id="session-countdown-display" class="font-mono font-bold text-emerald-700">10:00</span>
+                    </div>
+
                     <!-- Dropdown: Profil Pengguna & Keluar -->
                     <div class="relative dropdown-container">
                         <button type="button" 
@@ -337,6 +350,15 @@
                     <span class="font-heading font-bold text-slate-900 text-xs">SCP Portal Waka</span>
                     <p class="text-[10px] text-slate-500">School Class Progress</p>
                 </div>
+            </div>
+
+            <!-- Sisa Waktu Sesi Aktif di Menu Mobile -->
+            <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                <span class="font-medium text-slate-600 flex items-center space-x-1.5">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                    <span>Sisa Waktu Sesi:</span>
+                </span>
+                <span id="mobile-session-countdown-display" class="font-mono font-bold text-emerald-700">10:00</span>
             </div>
 
             <a href="{{ url('/waka/dashboard') }}" 
@@ -848,5 +870,182 @@
             });
         </script>
     @endif
+
+    @if(session('warning'))
+        <div id="flash-warning-data" data-message="{{ session('warning') }}" class="hidden"></div>
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                const el = document.getElementById('flash-warning-data');
+                if (el && el.dataset.message) {
+                    Swal.fire({
+                        title: 'Perhatian',
+                        text: el.dataset.message,
+                        icon: 'warning',
+                        confirmButtonText: 'Tutup',
+                        confirmButtonColor: '#2563EB',
+                    });
+                }
+            });
+        </script>
+    @endif
+
+    <!-- MANAJEMEN SESI AKTIF WAKA (OTOMATIS LOGOUT JIKA 10 MENIT TIDAK AKTIF) -->
+    <script>
+        (function() {
+            const IDLE_LIMIT = 600; // 10 menit (600 detik)
+            let secondsRemaining = IDLE_LIMIT;
+            let lastHeartbeat = Date.now();
+            let isLoggedOut = false;
+            let timerInterval = null;
+
+            const badge = document.getElementById('waka-session-badge');
+            const countdownDisplay = document.getElementById('session-countdown-display');
+            const mobileCountdownDisplay = document.getElementById('mobile-session-countdown-display');
+            const pingDot = document.getElementById('session-ping-dot');
+            const dot = document.getElementById('session-dot');
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+
+            function formatTime(seconds) {
+                const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+                const s = (seconds % 60).toString().padStart(2, '0');
+                return `${m}:${s}`;
+            }
+
+            function updateDisplay() {
+                const formatted = formatTime(secondsRemaining);
+                if (countdownDisplay) countdownDisplay.textContent = formatted;
+                if (mobileCountdownDisplay) mobileCountdownDisplay.textContent = formatted;
+
+                if (!badge) return;
+
+                if (secondsRemaining <= 60) {
+                    // <= 1 menit: status Kritis (Merah Berkedip)
+                    badge.className = "flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-300 transition-all duration-300 shadow-xs animate-pulse select-none cursor-pointer";
+                    if (countdownDisplay) countdownDisplay.className = "font-mono font-extrabold text-rose-700";
+                    if (dot) dot.className = "relative inline-flex rounded-full h-2 w-2 bg-rose-600";
+                    if (pingDot) pingDot.className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75";
+                } else if (secondsRemaining <= 180) {
+                    // <= 3 menit: status Peringatan (Kuning/Amber)
+                    badge.className = "flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-300 transition-all duration-300 shadow-2xs select-none cursor-pointer";
+                    if (countdownDisplay) countdownDisplay.className = "font-mono font-bold text-amber-700";
+                    if (dot) dot.className = "relative inline-flex rounded-full h-2 w-2 bg-amber-500";
+                    if (pingDot) pingDot.className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75";
+                } else {
+                    // Normal: > 3 menit (Hijau Emerald)
+                    badge.className = "flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 transition-all duration-300 shadow-2xs select-none cursor-pointer";
+                    if (countdownDisplay) countdownDisplay.className = "font-mono font-bold text-emerald-700";
+                    if (dot) dot.className = "relative inline-flex rounded-full h-2 w-2 bg-emerald-500";
+                    if (pingDot) pingDot.className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75";
+                }
+            }
+
+            function sendHeartbeat() {
+                if (!csrfToken || isLoggedOut) return;
+                fetch("{{ route('waka.session.keepalive') }}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ active: true })
+                }).then(response => {
+                    if (response.status === 401 || response.status === 419) {
+                        triggerSessionExpire();
+                    }
+                }).catch(() => {});
+            }
+
+            function resetIdleTimer() {
+                if (isLoggedOut) return;
+                secondsRemaining = IDLE_LIMIT;
+                updateDisplay();
+
+                // Perbarui sesi di backend jika telah beraktivitas lebih dari 2 menit sejak heartbeat sebelumnya
+                const now = Date.now();
+                if (now - lastHeartbeat > 120000) {
+                    lastHeartbeat = now;
+                    sendHeartbeat();
+                }
+            }
+
+            function triggerSessionExpire() {
+                if (isLoggedOut) return;
+                isLoggedOut = true;
+                clearInterval(timerInterval);
+
+                if (countdownDisplay) countdownDisplay.textContent = '00:00';
+                if (mobileCountdownDisplay) mobileCountdownDisplay.textContent = '00:00';
+
+                // Tampilkan Popup SweetAlert2 di tengah layar
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({
+                        title: 'Sesi Telah Berakhir',
+                        text: 'Anda tidak melakukan aktivitas selama 10 menit. Untuk keamanan data, sesi Anda telah ditutup secara otomatis.',
+                        icon: 'warning',
+                        confirmButtonText: 'Login Kembali',
+                        confirmButtonColor: '#2563EB',
+                        allowOutsideClick: false,
+                        allowEscapeKey: false
+                    }).then(() => {
+                        window.location.href = "{{ route('login') }}?status=session_expired";
+                    });
+                }
+
+                // Redirect otomatis setelah 4 detik bila popup tidak diklik
+                setTimeout(function() {
+                    window.location.href = "{{ route('login') }}?status=session_expired";
+                }, 4000);
+            }
+
+            // Tangkap semua interaksi pengguna (gerakan kursor, klik mouse, keyboard, scroll layar, sentuhan mobile)
+            const activityEvents = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+            let throttleTimer = null;
+
+            activityEvents.forEach(function(evt) {
+                window.addEventListener(evt, function() {
+                    if (!throttleTimer) {
+                        throttleTimer = setTimeout(function() {
+                            resetIdleTimer();
+                            throttleTimer = null;
+                        }, 1000); // Throttling 1 detik agar hemat performa browser
+                    }
+                }, { passive: true });
+            });
+
+            // Klik badge sesi untuk refresh/keepalive instan secara manual
+            if (badge) {
+                badge.addEventListener('click', function() {
+                    resetIdleTimer();
+                    lastHeartbeat = Date.now();
+                    sendHeartbeat();
+                    if (typeof Swal !== 'undefined') {
+                        const Toast = Swal.mixin({
+                            toast: true,
+                            position: 'top-end',
+                            showConfirmButton: false,
+                            timer: 2000,
+                            timerProgressBar: true
+                        });
+                        Toast.fire({
+                            icon: 'success',
+                            title: 'Sesi aktif diperpanjang (10:00)'
+                        });
+                    }
+                });
+            }
+
+            // Jalankan countdown 1 detik sekali
+            updateDisplay();
+            timerInterval = setInterval(function() {
+                if (secondsRemaining > 0) {
+                    secondsRemaining--;
+                    updateDisplay();
+                } else {
+                    triggerSessionExpire();
+                }
+            }, 1000);
+        })();
+    </script>
 </body>
 </html>

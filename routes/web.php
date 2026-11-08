@@ -33,8 +33,18 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 });
 
-// 4. RUTE KHUSUS WAKA KURIKULUM (DIPROTEKSI KETAT: Siswa & Role Lain Dilarang Akses)
-Route::middleware(['auth', 'role:waka_kurikulum'])->group(function () {
+// 4. RUTE KHUSUS WAKA KURIKULUM (DIPROTEKSI KETAT: Siswa & Role Lain Dilarang Akses, Timeout 10 Menit Tidak Aktif)
+Route::middleware(['auth', 'role:waka_kurikulum', 'active.session'])->group(function () {
+
+    // Keepalive Sesi Aktif Waka (Deteksi Aktivitas Interaktif Pengguna)
+    Route::post('/waka/session-keepalive', function () {
+        session(['waka_last_activity_time' => time()]);
+        return response()->json([
+            'status' => 'ok',
+            'expires_in' => 600,
+            'time' => time(),
+        ]);
+    })->name('waka.session.keepalive');
 
     // Dashboard & Rekapan Jurnal Hari Ini
     Route::get('/waka/dashboard', function () {

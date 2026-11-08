@@ -54,6 +54,20 @@
             </div>
         @endif
 
+        @if (session('warning') || request('status') === 'session_expired')
+            <div class="bg-amber-50 text-amber-800 p-3.5 rounded-xl text-xs mb-5 border border-amber-200 flex items-center space-x-2">
+                <svg class="w-4 h-4 flex-shrink-0 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                <span>{{ session('warning') ?? 'Sesi Anda telah berakhir karena tidak aktif selama 10 menit. Silakan login kembali.' }}</span>
+            </div>
+        @endif
+
+        @if (session('status'))
+            <div class="bg-emerald-50 text-emerald-800 p-3.5 rounded-xl text-xs mb-5 border border-emerald-200 flex items-center space-x-2">
+                <svg class="w-4 h-4 flex-shrink-0 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                <span>{{ session('status') }}</span>
+            </div>
+        @endif
+
         <form method="POST" action="{{ url('/login') }}" class="space-y-4">
             @csrf
             

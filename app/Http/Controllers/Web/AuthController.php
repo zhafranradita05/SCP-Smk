@@ -47,8 +47,9 @@ class AuthController extends Controller
                 ])->onlyInput('username');
             }
 
-            // 2. Akses Waka Kurikulum
+            // 2. Akses Waka Kurikulum (Set Inisialisasi Sesi Aktif 10 Menit)
             if ($user->role === 'waka_kurikulum') {
+                $request->session()->put('waka_last_activity_time', time());
                 return redirect()->intended('/waka/dashboard');
             }
 
