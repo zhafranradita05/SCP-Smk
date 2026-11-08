@@ -11,6 +11,16 @@ class AuthController extends Controller
     // 1. Tampilkan Halaman Login
     public function showLogin()
     {
+        if (Auth::check()) {
+            $user = Auth::user();
+            if ($user->role === 'waka_kurikulum') {
+                return redirect('/waka/dashboard');
+            }
+            if (in_array($user->role, ['guru', 'wali_kelas', 'guru_bk'])) {
+                return redirect()->route('teacher.schedule');
+            }
+        }
+
         return view('auth.login');
     }
 

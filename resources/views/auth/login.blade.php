@@ -94,8 +94,19 @@
             </button>
         </form>
 
-        <div class="mt-6 text-center text-xs text-slate-400">
-            &copy; {{ date('Y') }} School Class Progress. Semua hak dilindungi.
+        <div class="mt-6 pt-5 border-t border-slate-100 flex flex-col items-center gap-3">
+            <a href="{{ route('app.download') }}" class="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition">
+                <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                <span>Unduh Aplikasi Mobile (.APK)</span>
+            </a>
+
+            <a href="{{ url('/') }}" class="text-xs text-slate-500 hover:text-blue-600 font-medium transition flex items-center gap-1">
+                <span>← Kembali ke Halaman Utama</span>
+            </a>
+        </div>
+
+        <div class="mt-4 text-center text-[11px] text-slate-400">
+            &copy; {{ date('Y') }} School Class Progress. Seluruh hak dilindungi.
         </div>
     </div>
 

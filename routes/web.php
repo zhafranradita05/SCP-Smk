@@ -9,10 +9,27 @@ use App\Http\Controllers\Web\MasterDataController;
 use App\Http\Controllers\Web\ForgotPasswordController;
 use App\Http\Controllers\Web\PromotionController;
 
-// 1. Rute Publik (Belum Login)
-Route::get('/', [AuthController::class, 'showLogin'])->name('login');
-Route::get('/login', [AuthController::class, 'showLogin']);
+// 1. Rute Publik (Landing Page, Login & Unduh Aplikasi)
+Route::get('/', function () {
+    return view('welcome');
+})->name('landing');
+
+Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
 Route::post('/login', [AuthController::class, 'login']);
+
+// Rute Unduh APK Mobile SCP (Android)
+Route::get('/download/app', function () {
+    $apkPath = public_path('downloads/SCP-Presensi.apk');
+    if (file_exists($apkPath)) {
+        return response()->download($apkPath, 'SCP-Presensi-Mobile.apk');
+    }
+    // Cek lokasi file pada proyek scp_mobile lokal
+    $localApk = base_path('../scp_mobile/build/app/outputs/flutter-apk/app-debug.apk');
+    if (file_exists($localApk)) {
+        return response()->download($localApk, 'SCP-Presensi-Mobile.apk');
+    }
+    return redirect('/#download-app');
+})->name('app.download');
 
 // Lupa Password (Belum Login)
 Route::get('/forgot-password', [ForgotPasswordController::class, 'showForm'])->name('password.request');
