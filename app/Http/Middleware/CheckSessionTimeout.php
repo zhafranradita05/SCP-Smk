@@ -51,3 +51,4 @@ class CheckSessionTimeout
         return $next($request);
     }
 }
+
