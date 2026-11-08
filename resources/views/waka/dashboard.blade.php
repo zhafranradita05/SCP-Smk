@@ -15,15 +15,40 @@
     <!-- 1. KARTU STATISTIK RINGKASAN (WHITE & BLUE) -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <!-- Status Putaran -->
-        <div class="bg-white p-5 rounded-2xl shadow-xs border border-slate-200/90 hover:border-blue-300 transition group">
-            <div class="flex items-center justify-between mb-3">
-                <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Putaran Aktif</span>
-                <span class="p-2 rounded-xl bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                </span>
+        <div class="bg-white p-5 rounded-2xl shadow-xs border border-slate-200/90 hover:border-blue-300 transition group flex flex-col justify-between">
+            <div>
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Putaran Aktif</span>
+                    @if(isset($rotationInfo) && $rotationInfo['is_auto'])
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200" title="Putaran berputar otomatis setiap 2 minggu">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            Otomatis (2 Minggu)
+                        </span>
+                    @else
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                            Manual
+                        </span>
+                    @endif
+                </div>
+                <div class="flex items-baseline gap-2">
+                    <p class="text-2xl font-heading font-extrabold text-slate-900">{{ $activeCycle }}</p>
+                    <span class="text-xs font-medium text-slate-500">({{ $rawCycle === 'putaran_2' ? 'Normatif & Adaptif' : 'Produktif' }})</span>
+                </div>
             </div>
-            <p class="text-2xl font-heading font-extrabold text-slate-900">{{ $activeCycle }}</p>
-            <p class="text-xs text-slate-500 mt-1 font-medium">{{ $currentDay }}, {{ $todayFormatted }}</p>
+
+            <div class="mt-3 pt-2.5 border-t border-slate-100 text-xs">
+                @if(isset($rotationInfo) && $rotationInfo['is_auto'] && $rotationInfo['next_rotation_formatted'])
+                    <div class="flex items-center gap-1.5 text-blue-700 font-semibold">
+                        <svg class="w-3.5 h-3.5 flex-shrink-0 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        <span class="truncate">Berganti: {{ $rotationInfo['next_rotation_formatted'] }}</span>
+                    </div>
+                    <p class="text-[11px] text-slate-400 mt-0.5 pl-5">
+                        Menuju {{ $rotationInfo['next_cycle_label'] }} • <strong class="text-slate-600">{{ $rotationInfo['remaining_text'] }}</strong>
+                    </p>
+                @else
+                    <p class="text-xs text-slate-500 font-medium">{{ $currentDay }}, {{ $todayFormatted }}</p>
+                @endif
+            </div>
         </div>
 
         <!-- Total Jadwal Hari Ini -->

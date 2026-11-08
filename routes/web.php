@@ -64,8 +64,12 @@ Route::middleware(['auth', 'role:waka_kurikulum', 'active.session'])->group(func
         $currentDay = $daysMap[$now->format('l')] ?? $now->format('l');
 
         $setting = \App\Models\Setting::first();
+        if (!$setting) {
+            $setting = \App\Models\Setting::create(['active_cycle' => 'putaran_1', 'cycle_mode' => 'auto']);
+        }
         $rawCycle = $setting->active_cycle ?? 'putaran_1';
         $activeCycle = ($rawCycle === 'putaran_2') ? 'Putaran 2' : 'Putaran 1';
+        $rotationInfo = $setting->getNextRotationDetails();
 
         $totalGuru = \App\Models\User::whereIn('role', ['guru', 'wali_kelas'])->count();
         $totalKelas = \App\Models\SchoolClass::count();
@@ -97,6 +101,8 @@ Route::middleware(['auth', 'role:waka_kurikulum', 'active.session'])->group(func
         return view('waka.dashboard', compact(
             'totalGuru',
             'totalKelas',
+            'setting',
+            'rotationInfo',
             'activeCycle',
             'currentDay',
             'todayFormatted',

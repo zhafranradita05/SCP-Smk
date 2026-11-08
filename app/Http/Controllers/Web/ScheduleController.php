@@ -60,10 +60,13 @@ class ScheduleController extends Controller
         }
 
         $request->validate([
-            'file'      => 'required|file|max:15360', // Maksimal 15MB
-            'room_file' => 'nullable|file|max:15360',
-            'cycle'     => 'nullable|string|in:auto,putaran_1,putaran_2',
+            'file'             => 'required|file|max:15360', // Maksimal 15MB
+            'room_file'        => 'nullable|file|max:15360',
+            'cycle'            => 'nullable|string|in:auto,putaran_1,putaran_2',
+            'replace_existing' => 'nullable|boolean',
         ]);
+
+        $replaceExisting = $request->boolean('replace_existing', false);
 
         $file = $request->file('file');
         $originalName = $file->getClientOriginalName();
@@ -106,7 +109,7 @@ class ScheduleController extends Controller
 
         // 2. DETEKSI OTOMATIS TEMPLATE KISI / MATRIX JADWAL (FET TIMETABLE)
         if ($this->isFetOrGridSchedule($rows, $formatName)) {
-            return $this->processFetOrGridSchedules($rows, $formatName, $request, $targetCycle, $roomLookup);
+            return $this->processFetOrGridSchedules($rows, $formatName, $request, $targetCycle, $roomLookup, $replaceExisting);
         }
 
         // Ambil header dan bersihkan karakter aneh
@@ -209,6 +212,11 @@ class ScheduleController extends Controller
         $skippedCount = 0;
         $conflictLogs = [];
         $skippedLogs = [];
+
+        // Jika opsi Timpa/Bersihkan Putaran aktif, hapus dulu data lama di putaran ini
+        if ($replaceExisting) {
+            Schedule::where('cycle', $targetCycle)->delete();
+        }
 
         for ($i = 1; $i < count($rows); $i++) {
             $row = $rows[$i];
@@ -364,7 +372,11 @@ class ScheduleController extends Controller
             return back()->with('error', $errMsg);
         }
 
-        $msg = "Import Jadwal selesai (Format terdeteksi: {$formatName})! {$successCount} jadwal berhasil ditambahkan.";
+        $cycleLabel = ($targetCycle === 'putaran_2') ? 'Putaran 2' : 'Putaran 1';
+        $msg = "Import Jadwal selesai ({$formatName}) untuk {$cycleLabel}! {$successCount} jadwal berhasil ditambahkan.";
+        if ($replaceExisting) {
+            $msg .= " (Jadwal lama {$cycleLabel} telah dibersihkan sebelum import).";
+        }
         if ($conflictCount > 0) {
             $msg .= " {$conflictCount} jadwal dilewati karena tabrakan: " . implode('; ', array_slice($conflictLogs, 0, 2));
         }
@@ -560,8 +572,13 @@ class ScheduleController extends Controller
      * Pemrosesan File Jadwal Format Matriks / Kisi FET (Free Timetabling Software)
      * Mengelompokkan slot waktu mengajar, blok tatap muka, pencocokan ruangan silang, dan mencegah tabrakan jadwal
      */
-    private function processFetOrGridSchedules(array $rows, string $formatName, Request $request, string $targetCycle = 'putaran_1', array $roomLookup = [])
+    private function processFetOrGridSchedules(array $rows, string $formatName, Request $request, string $targetCycle = 'putaran_1', array $roomLookup = [], bool $replaceExisting = false)
     {
+        // Jika opsi Timpa/Bersihkan Putaran aktif, hapus dulu data lama di target putaran ini
+        if ($replaceExisting) {
+            Schedule::where('cycle', $targetCycle)->delete();
+        }
+
         // Preload master data
         $teacherList = User::whereIn('role', ['guru', 'wali_kelas', 'guru_bk'])->get();
         $classes = SchoolClass::all();
@@ -1093,6 +1110,9 @@ class ScheduleController extends Controller
 
         $cycleLabel = ($targetCycle === 'putaran_2') ? 'Putaran 2 (Normatif & Adaptif)' : 'Putaran 1 (Produktif)';
         $msg = "Import Jadwal FET selesai ({$formatName}) untuk {$cycleLabel}! {$successCount} sesi jadwal tatap muka otomatis disimpan.";
+        if ($replaceExisting) {
+            $msg .= " (Jadwal lama {$cycleLabel} telah dibersihkan sebelum import).";
+        }
         if (!empty($roomLookup)) {
             $msg .= " Pencocokan silang ruangan aktif dari File Jadwal Ruangan.";
         }

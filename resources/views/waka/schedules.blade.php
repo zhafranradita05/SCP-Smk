@@ -43,10 +43,11 @@
 
         <form action="{{ route('waka.settings.update') }}" method="POST">
             @csrf
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-center mb-5">
-                <!-- Tahun Ajaran Sistem -->
+            
+            <!-- 1. Tahun Ajaran, Semester & Mode Siklus -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                 <div>
-                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Tahun Ajaran Aktif:</label>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Tahun Ajaran:</label>
                     <select name="academic_year" class="w-full text-xs p-2.5 border rounded-lg border-slate-200 bg-white text-slate-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-semibold">
                         <option value="2024/2025" {{ ($setting->academic_year ?? '2024/2025') == '2024/2025' ? 'selected' : '' }}>2024/2025</option>
                         <option value="2025/2026" {{ ($setting->academic_year ?? '') == '2025/2026' ? 'selected' : '' }}>2025/2026</option>
@@ -55,28 +56,97 @@
                     </select>
                 </div>
 
-                <!-- Semester Sistem -->
                 <div>
-                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Semester Aktif:</label>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Semester:</label>
                     <select name="active_semester" class="w-full text-xs p-2.5 border rounded-lg border-slate-200 bg-white text-slate-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-semibold">
                         <option value="ganjil" {{ ($setting->active_semester ?? 'ganjil') == 'ganjil' ? 'selected' : '' }}>Semester Ganjil (Juli - Des)</option>
                         <option value="genap" {{ ($setting->active_semester ?? '') == 'genap' ? 'selected' : '' }}>Semester Genap (Jan - Jun)</option>
                     </select>
                 </div>
 
-                <!-- Pilihan Putaran -->
-                <div class="md:col-span-2">
-                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Putaran Aktif Minggu Ini:</label>
-                    <div class="flex gap-3">
-                        <label class="flex items-center gap-2 p-2.5 border rounded-lg cursor-pointer flex-1 transition {{ $setting->active_cycle == 'putaran_1' ? 'border-blue-500 bg-blue-50/70 text-blue-900 font-bold shadow-xs' : 'border-slate-200 hover:bg-slate-50' }}">
-                            <input type="radio" name="active_cycle" value="putaran_1" {{ $setting->active_cycle == 'putaran_1' ? 'checked' : '' }} class="w-4 h-4 text-blue-600 focus:ring-blue-500">
-                            <span class="text-xs">Putaran 1</span>
+                <div class="sm:col-span-2">
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Sistem Pergantian Putaran:</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="flex items-center gap-2 p-2 border rounded-lg cursor-pointer transition {{ ($setting->cycle_mode ?? 'auto') == 'auto' ? 'border-emerald-500 bg-emerald-50/70 text-emerald-900 font-bold' : 'border-slate-200 hover:bg-slate-50' }}">
+                            <input type="radio" name="cycle_mode" value="auto" {{ ($setting->cycle_mode ?? 'auto') == 'auto' ? 'checked' : '' }} onchange="toggleCycleMode(this.value)" class="text-emerald-600 focus:ring-emerald-500">
+                            <div>
+                                <span class="block text-xs font-bold">Otomatis (2 Minggu)</span>
+                                <span class="block text-[10px] text-emerald-700 font-normal">Berganti sendiri per 14 hari</span>
+                            </div>
                         </label>
-                        <label class="flex items-center gap-2 p-2.5 border rounded-lg cursor-pointer flex-1 transition {{ $setting->active_cycle == 'putaran_2' ? 'border-blue-500 bg-blue-50/70 text-blue-900 font-bold shadow-xs' : 'border-slate-200 hover:bg-slate-50' }}">
-                            <input type="radio" name="active_cycle" value="putaran_2" {{ $setting->active_cycle == 'putaran_2' ? 'checked' : '' }} class="w-4 h-4 text-blue-600 focus:ring-blue-500">
-                            <span class="text-xs">Putaran 2</span>
+                        <label class="flex items-center gap-2 p-2 border rounded-lg cursor-pointer transition {{ ($setting->cycle_mode ?? 'auto') == 'manual' ? 'border-blue-500 bg-blue-50/70 text-blue-900 font-bold' : 'border-slate-200 hover:bg-slate-50' }}">
+                            <input type="radio" name="cycle_mode" value="manual" {{ ($setting->cycle_mode ?? 'auto') == 'manual' ? 'checked' : '' }} onchange="toggleCycleMode(this.value)" class="text-blue-600 focus:ring-blue-500">
+                            <div>
+                                <span class="block text-xs font-bold">Manual</span>
+                                <span class="block text-[10px] text-slate-500 font-normal">Waka ubah sendiri saat libur/ujian</span>
+                            </div>
                         </label>
                     </div>
+                </div>
+            </div>
+
+            <!-- 2. Konfigurasi Otomatis 2 Mingguan -->
+            <div id="auto-cycle-settings" class="p-4 bg-emerald-50/40 border border-emerald-200 rounded-xl mb-4 {{ ($setting->cycle_mode ?? 'auto') == 'manual' ? 'hidden' : '' }}">
+                <div class="flex items-center gap-2 mb-3">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span class="text-xs font-bold text-emerald-950 uppercase tracking-wider">Kalender Putaran Otomatis (Set Acuan Sekali Saja)</span>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Tanggal Acuan Awal Siklus:</label>
+                        <input type="date" name="cycle_start_date" value="{{ optional($setting->cycle_start_date)->format('Y-m-d') ?? now()->startOfWeek()->format('Y-m-d') }}" class="w-full text-xs p-2 border rounded-lg border-slate-200 bg-white text-slate-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-semibold">
+                        <span class="text-[10px] text-slate-500 mt-0.5 block">Pilih tanggal hari Senin dimulainya siklus acuan.</span>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Siklus pada Tanggal Acuan:</label>
+                        <select name="cycle_start_cycle" class="w-full text-xs p-2 border rounded-lg border-slate-200 bg-white text-slate-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-semibold">
+                            <option value="putaran_1" {{ ($setting->cycle_start_cycle ?? 'putaran_1') == 'putaran_1' ? 'selected' : '' }}>Putaran 1 (Produktif)</option>
+                            <option value="putaran_2" {{ ($setting->cycle_start_cycle ?? '') == 'putaran_2' ? 'selected' : '' }}>Putaran 2 (Normatif & Adaptif)</option>
+                        </select>
+                        <span class="text-[10px] text-slate-500 mt-0.5 block">Putaran yang aktif pada tanggal acuan tersebut.</span>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Interval Pergantian:</label>
+                        <select name="cycle_interval_weeks" class="w-full text-xs p-2 border rounded-lg border-slate-200 bg-white text-slate-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-semibold">
+                            <option value="2" {{ ($setting->cycle_interval_weeks ?? 2) == 2 ? 'selected' : '' }}>Setiap 2 Minggu (Standar Sekolah)</option>
+                            <option value="1" {{ ($setting->cycle_interval_weeks ?? 2) == 1 ? 'selected' : '' }}>Setiap 1 Minggu</option>
+                            <option value="3" {{ ($setting->cycle_interval_weeks ?? 2) == 3 ? 'selected' : '' }}>Setiap 3 Minggu</option>
+                            <option value="4" {{ ($setting->cycle_interval_weeks ?? 2) == 4 ? 'selected' : '' }}>Setiap 4 Minggu</option>
+                        </select>
+                        <span class="text-[10px] text-slate-500 mt-0.5 block">Durasi lamanya setiap putaran berlangsung.</span>
+                    </div>
+                </div>
+
+                @php
+                    $rotInfo = $setting->getNextRotationDetails();
+                @endphp
+                @if($rotInfo['is_auto'])
+                    <div class="mt-3 pt-3 border-t border-emerald-200/80 flex flex-wrap items-center justify-between text-xs text-emerald-950">
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold">Putaran Berjalan Sekarang:</span>
+                            <span class="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-extrabold uppercase">{{ $rotInfo['current_label'] }}</span>
+                        </div>
+                        <div class="text-[11px] font-semibold text-emerald-800 mt-1 sm:mt-0">
+                            📅 {{ $rotInfo['info_text'] }}
+                        </div>
+                    </div>
+                @endif
+            </div>
+
+            <!-- 3. Pilihan Manual Putaran (Jika Mode Manual) -->
+            <div id="manual-cycle-settings" class="p-4 bg-blue-50/40 border border-blue-200 rounded-xl mb-4 {{ ($setting->cycle_mode ?? 'auto') == 'auto' ? 'hidden' : '' }}">
+                <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Pilih Putaran Aktif Manual:</label>
+                <div class="flex gap-3">
+                    <label class="flex items-center gap-2 p-2.5 border rounded-lg cursor-pointer flex-1 transition {{ $setting->active_cycle == 'putaran_1' ? 'border-blue-500 bg-blue-50/70 text-blue-900 font-bold shadow-xs' : 'border-slate-200 hover:bg-slate-50' }}">
+                        <input type="radio" name="active_cycle" value="putaran_1" {{ $setting->active_cycle == 'putaran_1' ? 'checked' : '' }} class="w-4 h-4 text-blue-600 focus:ring-blue-500">
+                        <span class="text-xs">Putaran 1 (Produktif)</span>
+                    </label>
+                    <label class="flex items-center gap-2 p-2.5 border rounded-lg cursor-pointer flex-1 transition {{ $setting->active_cycle == 'putaran_2' ? 'border-blue-500 bg-blue-50/70 text-blue-900 font-bold shadow-xs' : 'border-slate-200 hover:bg-slate-50' }}">
+                        <input type="radio" name="active_cycle" value="putaran_2" {{ $setting->active_cycle == 'putaran_2' ? 'checked' : '' }} class="w-4 h-4 text-blue-600 focus:ring-blue-500">
+                        <span class="text-xs">Putaran 2 (Normatif & Adaptif)</span>
+                    </label>
                 </div>
             </div>
 
@@ -91,9 +161,9 @@
                 </label>
             </div>
 
-            <div class="mt-6 flex justify-end">
+            <div class="mt-5 flex justify-end">
                 <button type="submit" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-xs transition">
-                    Simpan Perubahan Siklus & Kunci
+                    Simpan Konfigurasi Putaran & Kunci
                 </button>
             </div>
         </form>
@@ -472,27 +542,46 @@
 
                 <!-- Pilihan Putaran -->
                 <div>
-                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Target Putaran / Siklus *</label>
-                    <div class="grid grid-cols-3 gap-2">
-                        <label class="flex items-center gap-2 p-2 border rounded-xl cursor-pointer transition hover:bg-slate-50 border-slate-200">
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Target Putaran / Siklus Tujuan *</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="flex items-center gap-2 p-2.5 border rounded-xl cursor-pointer transition border-slate-200 hover:bg-slate-50">
                             <input type="radio" name="cycle" value="putaran_1" class="text-blue-600 focus:ring-blue-500">
                             <div>
-                                <span class="block text-xs font-semibold text-slate-800">Putaran 1</span>
-                                <span class="block text-[10px] text-slate-400">Produktif</span>
+                                <span class="block text-xs font-bold text-slate-800">Putaran 1</span>
+                                <span class="block text-[10px] text-slate-500 font-medium">Produktif / Teori Blok 1</span>
                             </div>
                         </label>
-                        <label class="flex items-center gap-2 p-2 border rounded-xl cursor-pointer transition bg-blue-50/70 border-blue-500 text-blue-900 shadow-xs">
+                        <label class="flex items-center gap-2 p-2.5 border rounded-xl cursor-pointer transition bg-blue-50/70 border-blue-500 text-blue-900 shadow-xs">
                             <input type="radio" name="cycle" value="putaran_2" checked class="text-blue-600 focus:ring-blue-500">
                             <div>
                                 <span class="block text-xs font-bold text-blue-900">Putaran 2</span>
-                                <span class="block text-[10px] text-blue-600 font-medium">Normatif & Adaptif</span>
+                                <span class="block text-[10px] text-blue-700 font-medium">Normatif & Adaptif / Blok 2</span>
                             </div>
                         </label>
-                        <label class="flex items-center gap-2 p-2 border rounded-xl cursor-pointer transition hover:bg-slate-50 border-slate-200">
-                            <input type="radio" name="cycle" value="auto" class="text-blue-600 focus:ring-blue-500">
+                    </div>
+                </div>
+
+                <!-- Penanganan Jadwal Lama (Anti-Tabrakan) -->
+                <div class="p-3 bg-amber-50/60 border border-amber-200 rounded-xl space-y-2">
+                    <div class="flex items-center justify-between">
+                        <label class="text-xs font-bold text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
+                            <svg class="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                            <span>Mode Anti-Tabrakan (Penanganan Jadwal Lama):</span>
+                        </label>
+                    </div>
+                    <div class="space-y-1.5">
+                        <label class="flex items-start gap-2.5 cursor-pointer p-2 rounded-lg bg-white border border-slate-200 hover:border-blue-400 transition">
+                            <input type="radio" name="replace_existing" value="0" checked class="mt-0.5 text-blue-600 focus:ring-blue-500">
                             <div>
-                                <span class="block text-xs font-semibold text-slate-800">Otomatis</span>
-                                <span class="block text-[10px] text-slate-400">Ikuti Siklus Aktif</span>
+                                <strong class="text-slate-800 block text-xs">Pertahankan Jadwal Lama (Lewati yang bentrok)</strong>
+                                <span class="text-[11px] text-slate-500">Jadwal yang sudah ada tetap disimpan. Baris yang bentrok jamnya akan dilewati.</span>
+                            </div>
+                        </label>
+                        <label class="flex items-start gap-2.5 cursor-pointer p-2 rounded-lg bg-white border border-slate-200 hover:border-emerald-400 transition">
+                            <input type="radio" name="replace_existing" value="1" class="mt-0.5 text-emerald-600 focus:ring-emerald-500">
+                            <div>
+                                <strong class="text-emerald-800 block text-xs">Bersihkan & Timpa Jadwal Putaran Ini (Fresh Import - Disarankan)</strong>
+                                <span class="text-[11px] text-slate-500">Kosongkan seluruh jadwal di target putaran ini sebelum import baru. <em>Jadwal di putaran lainnya dijamin tetap aman.</em></span>
                             </div>
                         </label>
                     </div>
@@ -694,6 +783,19 @@
         const modal = document.getElementById('importScheduleModal');
         if (e.target === modal) closeImportScheduleModal();
     });
+
+    // Toggle Tampilan Pengaturan Siklus (Otomatis vs Manual)
+    function toggleCycleMode(mode) {
+        const autoBox = document.getElementById('auto-cycle-settings');
+        const manualBox = document.getElementById('manual-cycle-settings');
+        if (mode === 'auto') {
+            if (autoBox) autoBox.classList.remove('hidden');
+            if (manualBox) manualBox.classList.add('hidden');
+        } else {
+            if (autoBox) autoBox.classList.add('hidden');
+            if (manualBox) manualBox.classList.remove('hidden');
+        }
+    }
 
     // Inisialisasi saat pertama kali load
     document.addEventListener('DOMContentLoaded', function() {
