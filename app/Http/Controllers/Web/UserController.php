@@ -572,7 +572,7 @@ class UserController extends Controller
                 }
 
                 // 2. Iterasi setiap data siswa yang berhasil diekstraksi
-                foreach ($studentList as $sItem) {
+                foreach ($studentList as $sIndex => $sItem) {
                     $nama     = $sItem['name'];
                     $rawNis   = $sItem['nis'];
                     $classId  = $sItem['class_id'] ?: $sheetClassId;
@@ -683,24 +683,33 @@ class UserController extends Controller
                         if ($savedStudent) {
                             $parentNis = trim($savedStudent->identifier ?: $savedStudent->username);
                             if (!empty($parentNis)) {
-                                User::updateOrCreate(
-                                    ['student_id' => $savedStudent->id],
-                                    [
-                                        'name'       => 'Orang Tua ' . $savedStudent->name,
-                                        'username'   => 'P' . $parentNis,
-                                        'identifier' => 'P' . $parentNis,
-                                        'email'      => 'p' . strtolower($parentNis) . '@gmail.com',
-                                        'password'   => $defaultPasswordHash,
-                                        'role'       => 'orang_tua',
-                                        'class_id'   => $savedStudent->class_id,
-                                        'phone'      => $savedStudent->phone,
-                                        'status'     => 'aktif',
-                                    ]
-                                );
+                                $parentUser = User::where('student_id', $savedStudent->id)
+                                    ->orWhere('username', 'P' . $parentNis)
+                                    ->first();
+
+                                $parentData = [
+                                    'student_id' => $savedStudent->id,
+                                    'name'       => 'Orang Tua ' . $savedStudent->name,
+                                    'username'   => 'P' . $parentNis,
+                                    'identifier' => 'P' . $parentNis,
+                                    'email'      => 'p' . strtolower($parentNis) . '@gmail.com',
+                                    'role'       => 'orang_tua',
+                                    'class_id'   => $savedStudent->class_id,
+                                    'phone'      => $savedStudent->phone,
+                                    'status'     => 'aktif',
+                                ];
+
+                                if ($parentUser) {
+                                    $parentUser->update($parentData);
+                                } else {
+                                    $parentData['password'] = $defaultPasswordHash;
+                                    User::create($parentData);
+                                }
                             }
                         }
                     } catch (\Exception $e) {
-                        $errors[] = "Baris " . ($i + 1) . " ($nama): " . $e->getMessage();
+                        $rowNum = $sItem['row'] ?? ($sIndex + 1);
+                        $errors[] = "Baris {$rowNum} ({$nama}): " . $e->getMessage();
                     }
                 }
             }
