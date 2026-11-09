@@ -234,7 +234,7 @@ class MasterDataController extends Controller
                     } elseif ($tempColMap['kelas'] === false && preg_match('/^(kelas|rombel|nama kelas|tingkat|class)$/i', $cClean)) {
                         $tempColMap['kelas'] = $cIdx;
                         $matchedIndices[$cIdx] = true;
-                    } elseif ($tempColMap['nip'] === false && preg_match('/\b(nip|nuptk|identifier|id guru|kode guru)\b/i', $cClean)) {
+                    } elseif ($tempColMap['nip'] === false && preg_match('/\b(nip|nuptk|nik)\b/i', $cClean)) {
                         $tempColMap['nip'] = $cIdx;
                         $matchedIndices[$cIdx] = true;
                     } elseif ($tempColMap['email'] === false && preg_match('/\b(email|surel|mail)\b/i', $cClean)) {
@@ -249,6 +249,19 @@ class MasterDataController extends Controller
                     } elseif ($tempColMap['nama_ruang'] === false && preg_match('/\b(nama ruang|nama ruangan|ruang|ruangan|lab|room|room name)\b/i', $cClean)) {
                         $tempColMap['nama_ruang'] = $cIdx;
                         $matchedIndices[$cIdx] = true;
+                    }
+                }
+
+                // Fallback secondary identifier jika tidak ada kolom NIP/NUPTK/NIK eksplisit
+                if ($tempColMap['nip'] === false) {
+                    foreach ($r as $cIdx => $val) {
+                        $cClean = preg_replace('/[^a-z0-9]/', ' ', strtolower(trim((string)$val)));
+                        $cClean = preg_replace('/\s+/', ' ', trim($cClean));
+                        if (preg_match('/\b(identifier|id guru|kode guru)\b/i', $cClean)) {
+                            $tempColMap['nip'] = $cIdx;
+                            $matchedIndices[$cIdx] = true;
+                            break;
+                        }
                     }
                 }
 
@@ -386,8 +399,16 @@ class MasterDataController extends Controller
                                 if ($teacher->role === 'guru') {
                                     $teacher->update(['role' => 'wali_kelas']);
                                 }
-                                if (!empty($nipVal) && $teacher->identifier !== $nipVal) {
-                                    $teacher->update(['identifier' => $nipVal]);
+                                if ($colMap['nip'] !== false) {
+                                    if (!empty($nipVal)) {
+                                        if ($teacher->identifier !== $nipVal) {
+                                            $teacher->update(['identifier' => $nipVal]);
+                                        }
+                                    } else {
+                                        if (!empty($teacher->identifier) && (strlen($teacher->identifier) <= 3 || (is_numeric($teacher->identifier) && (int)$teacher->identifier < 1000))) {
+                                            $teacher->update(['identifier' => null]);
+                                        }
+                                    }
                                 }
                                 if (!empty($phoneVal) && (empty($teacher->phone) || $teacher->phone !== $phoneVal)) {
                                     $teacher->update(['phone' => $phoneVal]);

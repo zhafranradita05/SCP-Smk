@@ -1341,7 +1341,7 @@ class UserController extends Controller
 
                     if ($tempMap['nama'] === false && preg_match('/^(nama|nama guru|nama pegawai|nama ptk|nama pendidik|nama wali|nama wali kelas|wali kelas|wali|nama lengkap|guru|pegawai|pendidik|ptk|name|full name)$/i', $cClean)) {
                         $tempMap['nama'] = $cIdx;
-                    } elseif ($tempMap['nip'] === false && preg_match('/\b(nip|nuptk|nik|identifier|kode guru|id guru|kode|id|no induk)\b/i', $cClean)) {
+                    } elseif ($tempMap['nip'] === false && preg_match('/\b(nip|nuptk|nik)\b/i', $cClean)) {
                         $tempMap['nip'] = $cIdx;
                     } elseif ($tempMap['email'] === false && preg_match('/\b(email|surel|mail|e mail)\b/i', $cClean)) {
                         $tempMap['email'] = $cIdx;
@@ -1349,6 +1349,18 @@ class UserController extends Controller
                         $tempMap['phone'] = $cIdx;
                     } elseif ($tempMap['status'] === false && preg_match('/\b(status|kepegawaian|status ptk|pangkat|golongan)\b/i', $cClean)) {
                         $tempMap['status'] = $cIdx;
+                    }
+                }
+
+                // Fallback secondary identifier jika tidak ada kolom NIP/NUPTK/NIK eksplisit
+                if ($tempMap['nip'] === false) {
+                    foreach ($r as $cIdx => $val) {
+                        $cClean = preg_replace('/[^a-z0-9]/', ' ', strtolower(trim((string)$val)));
+                        $cClean = preg_replace('/\s+/', ' ', trim($cClean));
+                        if (preg_match('/\b(identifier|kode guru|id guru)\b/i', $cClean)) {
+                            $tempMap['nip'] = $cIdx;
+                            break;
+                        }
                     }
                 }
 
@@ -1473,9 +1485,21 @@ class UserController extends Controller
                 try {
                     if ($existingUser) {
                         $updated = false;
-                        if ($nip && $existingUser->identifier !== $nip) {
-                            $existingUser->identifier = $nip;
-                            $updated = true;
+                        if ($colMap['nip'] !== false) {
+                            if ($nip) {
+                                if ($existingUser->identifier !== $nip) {
+                                    $existingUser->identifier = $nip;
+                                    $updated = true;
+                                }
+                            } else {
+                                // Jika kolom NIP ada di file tapi kosong/strip untuk guru ini,
+                                // dan di database saat ini masih tertulis kode angka jadwal pendek (<= 3 digit seperti 45, 77, 51, 57, 9, 22),
+                                // hapus/kosongkan kode jadwal tersebut agar tidak tertampil di kolom NIP.
+                                if (!empty($existingUser->identifier) && (strlen($existingUser->identifier) <= 3 || (is_numeric($existingUser->identifier) && (int)$existingUser->identifier < 1000))) {
+                                    $existingUser->identifier = null;
+                                    $updated = true;
+                                }
+                            }
                         }
                         if ($phone && (empty($existingUser->phone) || $existingUser->phone !== $phone)) {
                             $existingUser->phone = $phone;
