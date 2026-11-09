@@ -647,7 +647,7 @@ class UserController extends Controller
                             if ($classId) {
                                 $updateData['class_id'] = $classId;
                             }
-                            if ($rawNis && empty($existingUser->identifier)) {
+                            if ($rawNis && $existingUser->identifier !== $rawNis) {
                                 $updateData['identifier'] = $rawNis;
                             }
                             // Jika username atau email masih format siswa_ / @siswa.sekolah.com, otomatis ubah ke 1 suku kata & @gmail.com
@@ -1464,7 +1464,7 @@ class UserController extends Controller
                 try {
                     if ($existingUser) {
                         $updated = false;
-                        if ($nip && empty($existingUser->identifier)) {
+                        if ($nip && $existingUser->identifier !== $nip) {
                             $existingUser->identifier = $nip;
                             $updated = true;
                         }
@@ -1472,9 +1472,12 @@ class UserController extends Controller
                             $existingUser->phone = $phone;
                             $updated = true;
                         }
-                        if ($email && empty($existingUser->email)) {
-                            $existingUser->email = $email;
-                            $updated = true;
+                        if ($email && $existingUser->email !== $email) {
+                            $emailExists = User::where('email', $email)->where('id', '!=', $existingUser->id)->exists();
+                            if (!$emailExists) {
+                                $existingUser->email = $email;
+                                $updated = true;
+                            }
                         }
                         if (!in_array($existingUser->role, ['guru', 'wali_kelas', 'guru_bk', 'waka_kurikulum'])) {
                             $existingUser->role = 'guru';

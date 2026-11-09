@@ -386,11 +386,17 @@ class MasterDataController extends Controller
                                 if ($teacher->role === 'guru') {
                                     $teacher->update(['role' => 'wali_kelas']);
                                 }
-                                if (!empty($nipVal) && empty($teacher->identifier)) {
+                                if (!empty($nipVal) && $teacher->identifier !== $nipVal) {
                                     $teacher->update(['identifier' => $nipVal]);
                                 }
-                                if (!empty($phoneVal) && empty($teacher->phone)) {
+                                if (!empty($phoneVal) && (empty($teacher->phone) || $teacher->phone !== $phoneVal)) {
                                     $teacher->update(['phone' => $phoneVal]);
+                                }
+                                if (!empty($emailVal) && $teacher->email !== $emailVal) {
+                                    $emailExists = User::where('email', $emailVal)->where('id', '!=', $teacher->id)->exists();
+                                    if (!$emailExists) {
+                                        $teacher->update(['email' => $emailVal]);
+                                    }
                                 }
 
                                 // Pasangkan ke kelas
