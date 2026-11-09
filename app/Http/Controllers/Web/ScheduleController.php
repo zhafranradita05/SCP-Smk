@@ -12,6 +12,86 @@ use App\Models\Setting;
 
 class ScheduleController extends Controller
 {
+    /**
+     * Resolusi Cerdas Ruangan ke 60 Fasilitas Ruangan Resmi SMK Negeri 1 Bantul:
+     * - 34 Ruang Teori (Ruang 1 s/d Ruang 34, mendukung angka langsung "10", "R10", "Ruang 10")
+     * - 22 Lab Komputer (Lab Komputer 1 s/d Lab Komputer 22, mendukung format "LAB5", "LAB 5", "LK5")
+     * - 1 Lab IPA ("LABIPA", "IPA", "Lab IPA")
+     * - 1 Lab Penataan Barang ("LABPB", "PB", "Lab Penataan Barang")
+     * - 1 Lapangan Olahraga ("OR", "OR1", "OR2", "Lapangan Olahraga")
+     * - 1 HALL Seni/Menari ("HALL", "SENI", "MENARI")
+     */
+    public static function resolveCanonicalRoom($rawName, $rooms)
+    {
+        if (empty($rawName)) return null;
+        $str = trim((string)$rawName, " \t\n\r\0\x0B'\"");
+        if (empty($str) || $str === '-' || $str === '---') return null;
+
+        $clean = preg_replace('/[^\p{L}\p{N}\s\.\-_]/u', '', $str);
+        $clean = trim(preg_replace('/\s+/', ' ', $clean));
+        if (empty($clean)) return null;
+
+        // 1. Angka Langsung 1..34 (Catatan khusus: file jadwal sekolah langsung menggunakan angka tanpa huruf R)
+        // Ataupun format Ruang 1..34, R-1..34, R. 1..34
+        if ((is_numeric($clean) && (int)$clean >= 1 && (int)$clean <= 34) ||
+            preg_match('/^(?:RUANG\s*TEORI|RUANG|R\.?|R\-)\s*([0-9]{1,2})$/i', $clean, $m)
+        ) {
+            $num = isset($m[1]) ? (int)$m[1] : (int)$clean;
+            if ($num >= 1 && $num <= 34) {
+                return $rooms->first(function ($r) use ($num) {
+                    return $r->name === "Ruang {$num}" || $r->code === "R-{$num}" || strtolower($r->name) === "ruang {$num}";
+                });
+            }
+        }
+
+        // 2. Lab Komputer 1..22 (Mendukung: LAB1, LAB 1, LAB-1, LK1, Lab Komputer 1, dsb)
+        if (preg_match('/^(?:LAB\s*KOMPUTER|LAB|LK)[\s\-_]*([0-9]{1,2})$/i', $clean, $m)) {
+            $num = (int)$m[1];
+            if ($num >= 1 && $num <= 22) {
+                return $rooms->first(function ($r) use ($num) {
+                    return $r->name === "Lab Komputer {$num}" || $r->code === "LAB-KOMPUTER-{$num}" || str_contains(strtolower($r->name), "komputer {$num}");
+                });
+            }
+        }
+
+        // 3. Lab IPA
+        if (preg_match('/^(?:LAB\s*IPA|LABIPA|LAB\s*ILMU\s*PENGETAHUAN\s*ALAM|IPA)$/i', $clean)) {
+            return $rooms->first(function ($r) {
+                return $r->code === 'LAB-IPA' || $r->name === 'Lab IPA' || str_contains(strtolower($r->name), 'ilmu pengetahuan alam') || str_contains(strtolower($r->name), 'ipa');
+            });
+        }
+
+        // 4. Lab Penataan Barang (PB)
+        if (preg_match('/^(?:LAB\s*PB|LABPB|LAB\s*PENATAAN\s*BARANG|PB)$/i', $clean)) {
+            return $rooms->first(function ($r) {
+                return $r->code === 'LAB-PB' || str_contains(strtolower($r->name), 'penataan barang');
+            });
+        }
+
+        // 5. Lapangan Olahraga (OR)
+        if (preg_match('/^(?:OR|OR\s*[0-9]+|LAPANGAN|LAPANGAN\s*OLAHRAGA)$/i', $clean)) {
+            return $rooms->first(function ($r) {
+                return $r->code === 'LAP-OR' || str_contains(strtolower($r->name), 'olahraga');
+            });
+        }
+
+        // 6. HALL (Ruang Seni/Menari)
+        if (preg_match('/^(?:HALL|SENI|MENARI|RUANG\s*UNTUK\s*MENARI)$/i', $clean)) {
+            return $rooms->first(function ($r) {
+                return $r->code === 'HALL' || str_contains(strtolower($r->name), 'hall') || str_contains(strtolower($r->name), 'menari');
+            });
+        }
+
+        // 7. Pencocokan langsung nama atau kode ruangan yang terdaftar
+        $lower = strtolower($clean);
+        $found = $rooms->first(function ($r) use ($lower) {
+            $rName = strtolower(trim($r->name));
+            $rCode = strtolower(trim($r->code));
+            return $rName === $lower || $rCode === $lower || str_replace(['-', ' '], '', $rName) === str_replace(['-', ' '], '', $lower);
+        });
+
+        return $found;
+    }
 
         /**
      * Download template Excel/CSV untuk import jadwal
@@ -179,7 +259,8 @@ class ScheduleController extends Controller
             return [strtolower(trim($c->name)) => $c->id];
         });
 
-        $rooms = Room::all()->mapWithKeys(function ($r) {
+        $allRoomsModel = Room::all();
+        $rooms = $allRoomsModel->mapWithKeys(function ($r) {
             $rName = strtolower(trim($r->name));
             $rCode = strtolower(trim($r->code));
             return [
@@ -311,9 +392,9 @@ class ScheduleController extends Controller
                 }
             }
 
-            // 3. Cari ID Ruangan
-            $cleanRoom = strtolower(trim($ruangStr));
-            $roomId = $rooms->get($cleanRoom) ?? $rooms->get(str_replace(['-', ' '], '', $cleanRoom));
+            // 3. Cari ID Ruangan (Mendukung 60 Ruang Kanonikal, angka langsung 1..34, LAB1..22, OR, HALL, IPA, PB)
+            $canonicalRoom = self::resolveCanonicalRoom($ruangStr, $allRoomsModel);
+            $roomId = $canonicalRoom ? $canonicalRoom->id : ($rooms->get(strtolower(trim($ruangStr))) ?? $rooms->get(str_replace(['-', ' '], '', strtolower(trim($ruangStr)))));
 
             // Validasi kelengkapan data per baris
             if (!$teacherId || !$classId || !$roomId || empty($mapel) || empty($start) || empty($end)) {
@@ -445,46 +526,19 @@ class ScheduleController extends Controller
         $isRoomPattern = function($str) {
             if (empty($str) || strlen($str) > 50) return false;
             if (!mb_check_encoding($str, 'UTF-8')) return false;
-            $clean = trim(preg_replace('/^[0-9]+[\.\s\-]+/', '', $str));
-            if (empty($clean) || strlen($clean) < 2) return false;
+            $clean = trim((string)$str);
+            if (empty($clean)) return false;
             if (preg_match('/^(smk\s*negeri|daftar\s*isi|komentar|halaman|jadwal\s*dihasilkan|kembali|nama\s*institusi)/i', $clean)) {
                 return false;
             }
-            return (bool) preg_match('/^(LAB|RUANG|R\.|R\s*[0-9]|OR\s*[0-9]|BENGKEL|STUDIO|AULA|TEORI)\b/i', $clean);
+            if (is_numeric($clean) && (int)$clean >= 1 && (int)$clean <= 34) {
+                return true;
+            }
+            return (bool) preg_match('/^(LAB|LK|RUANG|R\.?|OR|HALL|IPA|PB|BENGKEL|STUDIO|AULA|TEORI)\b/i', $clean);
         };
 
-        $getOrCreateRoom = function($rawName) use (&$rooms, $isRoomPattern) {
-            $str = trim((string)$rawName, " \t\n\r\0\x0B'\"");
-            $str = preg_replace('/^[0-9]+[\.\s\-]+/', '', $str);
-            $clean = trim($str, " \t\n\r\0\x0B'\"");
-            if (!$isRoomPattern($clean)) return null;
-
-            $clean = preg_replace('/[^\p{L}\p{N}\s\.\-_]/u', '', $clean);
-            $clean = trim(preg_replace('/\s+/', ' ', $clean));
-            if (empty($clean) || strlen($clean) < 2 || strlen($clean) > 50) return null;
-
-            $lower = strtolower($clean);
-            $code = strtoupper(str_replace([' ', '.'], '-', $clean));
-
-            $found = $rooms->first(function($r) use ($lower, $code) {
-                $rName = strtolower(trim($r->name));
-                $rCode = strtoupper(trim($r->code));
-                return $rName === $lower || $rCode === $code || str_replace(['-', ' '], '', $rName) === str_replace(['-', ' '], '', $lower);
-            });
-            if ($found) return $found;
-
-            $foundDb = Room::where('code', $code)->orWhere('name', $clean)->first();
-            if ($foundDb) {
-                $rooms->push($foundDb);
-                return $foundDb;
-            }
-
-            $newRoom = Room::create([
-                'name' => strtoupper($clean),
-                'code' => $code,
-            ]);
-            $rooms->push($newRoom);
-            return $newRoom;
+        $getOrCreateRoom = function($rawName) use (&$rooms) {
+            return self::resolveCanonicalRoom($rawName, $rooms);
         };
 
         $currentRoom = null;
@@ -691,63 +745,11 @@ class ScheduleController extends Controller
             return null;
         };
 
-        // Helper cari Ruang
+        // Helper cari Ruang Kanonikal
         $findRoom = function($roomStr) use (&$rooms) {
             if (empty($roomStr)) return null;
-            $clean = strtolower(trim($roomStr));
-
-            foreach ($rooms as $r) {
-                $rName = strtolower(trim($r->name));
-                $rCode = strtolower(trim($r->code));
-                if ($rName === $clean || $rCode === $clean || str_replace(['-', ' '], '', $rName) === str_replace(['-', ' '], '', $clean)) {
-                    return $r->id;
-                }
-            }
-
-            // Ekstensi nomor Lab (misal: "LAB 6" cocok ke "Lab Komputer 6")
-            if (preg_match('/\b(lab|laboratorium)\s*([0-9]+)\b/i', $clean, $m)) {
-                $num = $m[2];
-                foreach ($rooms as $r) {
-                    $rName = strtolower(trim($r->name));
-                    if (str_contains($rName, "komputer $num") || str_contains($rName, "lab $num") || str_ends_with($rName, " $num")) {
-                        return $r->id;
-                    }
-                }
-            }
-
-            // Ekstensi nomor Ruang (misal: "R. 10" / "R10" cocok ke "Ruang 10")
-            if (preg_match('/\b(ruang|r\.?)\s*([0-9]+)\b/i', $clean, $m)) {
-                $num = $m[2];
-                foreach ($rooms as $r) {
-                    $rName = strtolower(trim($r->name));
-                    if ($rName === "ruang $num" || $rName === "r $num" || str_ends_with($rName, " $num")) {
-                        return $r->id;
-                    }
-                }
-            }
-
-            // Validasi pola nama ruang sebelum membuat ruang baru
-            $cleanSanitized = preg_replace('/[^\p{L}\p{N}\s\.\-_]/u', '', (string)$roomStr);
-            $cleanSanitized = trim(preg_replace('/\s+/', ' ', $cleanSanitized));
-            if (empty($cleanSanitized) || strlen($cleanSanitized) < 2 || strlen($cleanSanitized) > 50) return null;
-            if (!preg_match('/^(LAB|RUANG|R\.|R\s*[0-9]|OR\s*[0-9]|BENGKEL|STUDIO|AULA|TEORI)\b/i', $cleanSanitized)) {
-                return null;
-            }
-
-            // Jika ruang baru belum terdaftar, buat otomatis
-            $code = strtoupper(str_replace([' ', '.'], '-', $cleanSanitized));
-            $foundDb = Room::where('code', $code)->orWhere('name', $cleanSanitized)->first();
-            if ($foundDb) {
-                $rooms->push($foundDb);
-                return $foundDb->id;
-            }
-
-            $newRoom = Room::create([
-                'name' => strtoupper($cleanSanitized),
-                'code' => $code,
-            ]);
-            $rooms->push($newRoom);
-            return $newRoom->id;
+            $canonical = self::resolveCanonicalRoom($roomStr, $rooms);
+            return $canonical ? $canonical->id : null;
         };
 
         // Helper parse isi sel jadwal FET (Jadwal Guru: sel berisi Kelas, Mapel, Ruang)
@@ -767,8 +769,11 @@ class ScheduleController extends Controller
                     continue;
                 }
 
-                // Cek Ruang
-                if (!$room && preg_match('/^(LAB|LABORATORIUM)\s*[\d\-A-Za-z]+|^(RUANG|R\.)\s*[\d\-A-Za-z]+|^R\s*([0-9]+)$|^OR\s*([0-9]+)$/i', $line)) {
+                // Cek Ruang (Mendukung angka langsung 1..34, LAB1..22, OR, HALL, IPA, PB, dll)
+                if (!$room && (
+                    (is_numeric($line) && (int)$line >= 1 && (int)$line <= 34) ||
+                    preg_match('/^(?:LAB|LK|LABORATORIUM)[\s\-_]*[0-9]{1,2}$|^(?:RUANG|R\.?|R\-)[\s\-_]*[0-9]{1,2}$|^(?:OR|OR\s*[0-9]+|LAPANGAN|LAPANGAN\s*OLAHRAGA)$|^(?:HALL|SENI|MENARI)$|^(?:LABIPA|IPA|LAB\s*IPA)$|^(?:PB|LAB\s*PB|PENATAAN\s*BARANG)$/i', $line)
+                )) {
                     $room = trim($line);
                     continue;
                 }
@@ -795,8 +800,11 @@ class ScheduleController extends Controller
                 $line = trim($line);
                 if (empty($line) || $line === '---' || $line === '-') continue;
 
-                // 1. Cek Ruang
-                if (!$room && preg_match('/^(LAB|LABORATORIUM)\s*[\d\-A-Za-z]+|^(RUANG|R\.)\s*[\d\-A-Za-z]+|^R\s*([0-9]+)$|^OR\s*([0-9]+)$/i', $line)) {
+                // 1. Cek Ruang (Mendukung angka langsung 1..34, LAB1..22, OR, HALL, IPA, PB, dll)
+                if (!$room && (
+                    (is_numeric($line) && (int)$line >= 1 && (int)$line <= 34) ||
+                    preg_match('/^(?:LAB|LK|LABORATORIUM)[\s\-_]*[0-9]{1,2}$|^(?:RUANG|R\.?|R\-)[\s\-_]*[0-9]{1,2}$|^(?:OR|OR\s*[0-9]+|LAPANGAN|LAPANGAN\s*OLAHRAGA)$|^(?:HALL|SENI|MENARI)$|^(?:LABIPA|IPA|LAB\s*IPA)$|^(?:PB|LAB\s*PB|PENATAAN\s*BARANG)$/i', $line)
+                )) {
                     $room = trim($line);
                     continue;
                 }
@@ -1025,31 +1033,16 @@ class ScheduleController extends Controller
                         }
                     }
 
-                    // 3. Jika tetap belum ada ruangan, fallback otomatis ke Ruang Home Base Kelas
+                    // 3. Jika tetap belum ada ruangan, fallback ke Ruang Teori Kanonikal 1..34 sesuai Kelas (tanpa membuat room baru)
                     if (!$roomId && $classId) {
-                        $classModel = $classes->firstWhere('id', $classId);
-                        $cName = $classModel ? $classModel->name : ($className ?: 'Umum');
+                        $targetRoomNum = (($classId - 1) % 34) + 1;
+                        $defaultRoom = $rooms->first(function($r) use ($targetRoomNum) {
+                            return $r->code === "R-{$targetRoomNum}" || $r->name === "Ruang {$targetRoomNum}";
+                        }) ?: $rooms->first(function($r) {
+                            return $r->code === 'R-1' || $r->name === 'Ruang 1';
+                        }) ?: $rooms->first();
 
-                        $defaultRoom = $rooms->first(function($r) use ($cName) {
-                            $rNorm = strtolower(str_replace([' ', '-', '.'], '', $r->name));
-                            $cNorm = strtolower(str_replace([' ', '-', '.'], '', $cName));
-                            return str_contains($rNorm, $cNorm) || $rNorm === $cNorm;
-                        });
-
-                        if (!$defaultRoom) {
-                            $cleanCName = preg_replace('/[^\p{L}\p{N}\s\.\-_]/u', '', (string)$cName);
-                            $cleanCName = trim(preg_replace('/\s+/', ' ', $cleanCName)) ?: 'UMUM';
-                            $fallbackCode = 'R-' . strtoupper(str_replace([' ', '.'], '-', $cleanCName));
-                            $defaultRoom = Room::where('code', $fallbackCode)->orWhere('name', 'Ruang ' . strtoupper($cleanCName))->first();
-                            if (!$defaultRoom) {
-                                $defaultRoom = Room::create([
-                                    'name' => 'Ruang ' . strtoupper($cleanCName),
-                                    'code' => $fallbackCode,
-                                ]);
-                            }
-                            $rooms->push($defaultRoom);
-                        }
-                        $roomId = $defaultRoom->id;
+                        $roomId = $defaultRoom ? $defaultRoom->id : null;
                     }
 
                     if (!$roomId) {
