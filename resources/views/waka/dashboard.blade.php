@@ -159,41 +159,56 @@
             <table class="w-full text-left border-collapse">
                 <thead>
                     <tr class="bg-slate-50/80 text-slate-600 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200">
-                        <th class="py-3 px-4">No</th>
-                        <th class="py-3 px-4">Guru Pengajar</th>
-                        <th class="py-3 px-4">Mata Pelajaran</th>
-                        <th class="py-3 px-4">Kelas & Ruang</th>
-                        <th class="py-3 px-4">Jam Mengajar</th>
-                        <th class="py-3 px-4 text-center">Status</th>
-                        <th class="py-3 px-4">Materi Terisi</th>
+                        <th class="py-3.5 px-4 w-12 text-center whitespace-nowrap">No</th>
+                        <th class="py-3.5 px-4 whitespace-nowrap min-w-[170px]">Guru Pengajar</th>
+                        <th class="py-3.5 px-4 min-w-[170px]">Mata Pelajaran</th>
+                        <th class="py-3.5 px-4 whitespace-nowrap min-w-[160px]">Kelas & Ruang</th>
+                        <th class="py-3.5 px-4 whitespace-nowrap min-w-[130px]">Jam Mengajar</th>
+                        <th class="py-3.5 px-4 text-center whitespace-nowrap min-w-[120px]">Status</th>
+                        <th class="py-3.5 px-4 min-w-[180px]">Materi Terisi</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 text-sm">
                     @forelse($schedules as $index => $sched)
                         <tr class="hover:bg-blue-50/30 transition">
-                            <td class="py-3.5 px-4 text-slate-400 font-medium">{{ $index + 1 }}</td>
-                            <td class="py-3.5 px-4 font-semibold text-slate-900">
-                                {{ $sched->teacher->name ?? '-' }}
+                            <td class="py-3.5 px-4 text-slate-400 font-medium text-center">{{ $index + 1 }}</td>
+                            <td class="py-3.5 px-4 whitespace-nowrap">
+                                <div class="font-semibold text-slate-900">{{ $sched->teacher->name ?? '-' }}</div>
                                 <div class="text-xs text-slate-500 font-normal">NIP: {{ $sched->teacher->identifier ?? '-' }}</div>
                             </td>
-                            <td class="py-3.5 px-4 text-slate-800 font-medium">{{ $sched->subject }}</td>
-                            <td class="py-3.5 px-4 text-slate-600">
+                            <td class="py-3.5 px-4 text-slate-800 font-medium">
+                                <span>{{ $sched->subject }}</span>
+                            </td>
+                            <td class="py-3.5 px-4 whitespace-nowrap">
                                 @php
                                     $majorCode = $sched->schoolClass->major ?? 'UMUM';
                                     $majorColor = $sched->schoolClass->major_badge_color ?? 'bg-slate-100 text-slate-700 border-slate-200';
+                                    $roomName = $sched->room->name ?? '-';
                                 @endphp
-                                <div class="flex items-center gap-1.5 mb-1">
-                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold border {{ $majorColor }}">
-                                        {{ $majorCode }}
-                                    </span>
-                                    <span class="font-bold text-slate-900">{{ $sched->schoolClass->name ?? '-' }}</span>
+                                <div class="flex flex-col gap-1.5 items-start">
+                                    <!-- Baris 1: Badge Jurusan + Nama Kelas Lengkap (Tidak Tertumpuk) -->
+                                    <div class="flex items-center gap-2 whitespace-nowrap">
+                                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold border flex-shrink-0 {{ $majorColor }}">
+                                            {{ $majorCode }}
+                                        </span>
+                                        <span class="font-bold text-slate-900 text-sm tracking-tight">{{ $sched->schoolClass->name ?? '-' }}</span>
+                                    </div>
+                                    <!-- Baris 2: Badge Ruangan Mandiri Rapi -->
+                                    <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100/90 text-slate-600 text-xs font-medium border border-slate-200/80 whitespace-nowrap">
+                                        <svg class="w-3.5 h-3.5 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                                        </svg>
+                                        <span>{{ $roomName }}</span>
+                                    </div>
                                 </div>
-                                <span class="text-xs text-slate-500 block">{{ $sched->room->name ?? '-' }}</span>
                             </td>
-                            <td class="py-3.5 px-4 text-slate-700 font-mono text-xs font-semibold">
-                                {{ substr($sched->start_time, 0, 5) }} - {{ substr($sched->end_time, 0, 5) }}
+                            <td class="py-3.5 px-4 text-slate-700 font-mono text-xs font-semibold whitespace-nowrap">
+                                <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-800">
+                                    <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                    <span>{{ substr($sched->start_time, 0, 5) }} - {{ substr($sched->end_time, 0, 5) }}</span>
+                                </div>
                             </td>
-                            <td class="py-3.5 px-4 text-center">
+                            <td class="py-3.5 px-4 text-center whitespace-nowrap">
                                 @if($sched->is_filled)
                                     <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-50 text-teal-700 border border-teal-200">
                                         ✓ Sudah Diisi
@@ -204,9 +219,9 @@
                                     </span>
                                 @endif
                             </td>
-                            <td class="py-3.5 px-4 text-slate-600 max-w-xs truncate">
+                            <td class="py-3.5 px-4 text-slate-600 max-w-xs">
                                 @if($sched->is_filled)
-                                    <span class="text-slate-900 font-medium">{{ $sched->journal->materi ?? '-' }}</span>
+                                    <span class="text-slate-900 font-medium block truncate">{{ $sched->journal->materi ?? '-' }}</span>
                                     <span class="text-xs text-slate-500 block">{{ $sched->journal->created_at->format('H:i') }} WIB</span>
                                 @else
                                     <span class="text-slate-400 italic text-xs">Belum ada catatan materi</span>

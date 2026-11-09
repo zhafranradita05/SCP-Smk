@@ -440,17 +440,21 @@
                             </td>
 
                             <!-- Jurusan, Kelas & Ruang -->
-                            <td class="py-3 px-4">
-                                <div class="flex items-center gap-1.5 mb-1">
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border {{ $majorColor }}">
-                                        {{ $majorCode }}
-                                    </span>
-                                    <span class="font-bold text-slate-900 text-sm">{{ $s->schoolClass->name ?? '-' }}</span>
+                            <td class="py-3.5 px-4 whitespace-nowrap">
+                                <div class="flex flex-col gap-1.5 items-start">
+                                    <div class="flex items-center gap-2 whitespace-nowrap">
+                                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold border flex-shrink-0 {{ $majorColor }}">
+                                            {{ $majorCode }}
+                                        </span>
+                                        <span class="font-bold text-slate-900 text-sm tracking-tight">{{ $s->schoolClass->name ?? '-' }}</span>
+                                    </div>
+                                    <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100/90 text-slate-600 text-xs font-medium border border-slate-200/80 whitespace-nowrap">
+                                        <svg class="w-3.5 h-3.5 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                                        </svg>
+                                        <span>{{ $s->room->name ?? '-' }}</span>
+                                    </div>
                                 </div>
-                                <span class="text-xs text-slate-500 inline-flex items-center gap-1">
-                                    <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
-                                    {{ $s->room->name ?? '-' }}
-                                </span>
                             </td>
 
                             <!-- Aksi -->
