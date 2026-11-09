@@ -35,6 +35,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/teacher/dashboard', [TeacherDashboardController::class, 'getDashboard']);
         Route::post('/journals', [JournalController::class, 'store']);
         Route::get('/journals/history', [JournalController::class, 'history']);
+        Route::get('/schedules/{id}/students-attendance', [JournalController::class, 'getStudentsForAttendance']);
         Route::get('/reminders', [ReminderController::class, 'index']);
         Route::post('/reminders/{id}/read', [ReminderController::class, 'markAsRead']);
     });

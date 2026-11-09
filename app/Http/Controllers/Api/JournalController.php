@@ -79,6 +79,91 @@ class JournalController extends Controller
         ]);
     }
 
+    /**
+     * Mengambil daftar siswa untuk absensi pada suatu jadwal
+     * Menghitung status default: semua siswa otomatis terdeteksi hadir (is_attended = true),
+     * kecuali siswa yang memiliki izin/sakit yang sudah disetujui untuk hari ini
+     * otomatis uncheck (is_attended = false) dengan status 'izin' atau 'sakit' serta catatan izinnya.
+     */
+    public function getStudentsForAttendance(Request $request, $scheduleId)
+    {
+        $user = Auth::user();
+        $schedule = \App\Models\Schedule::with('schoolClass')->find($scheduleId);
+
+        if (!$schedule) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Jadwal pelajaran tidak ditemukan!',
+            ], 404);
+        }
+
+        // Ambil semua siswa di kelas jadwal ini
+        $students = \App\Models\User::where('role', 'siswa')
+            ->where('class_id', $schedule->class_id)
+            ->orderBy('name', 'asc')
+            ->get();
+
+        // Cari izin yang sudah di-approve untuk hari ini
+        $today = date('Y-m-d');
+        $schedStart = $schedule->start_time ?? '00:00:00';
+        $schedEnd   = $schedule->end_time   ?? '23:59:59';
+
+        $approvedLeaves = LeaveRequest::where('status', 'approved')
+            ->where('start_date', '<=', $today)
+            ->where('end_date', '>=', $today)
+            ->whereIn('student_id', $students->pluck('id'))
+            ->get()
+            ->keyBy('student_id');
+
+        $studentList = $students->map(function ($s) use ($approvedLeaves, $schedStart, $schedEnd) {
+            $hasLeave = $approvedLeaves->get($s->id);
+            $isOverlapping = false;
+            $leaveInfo = null;
+            $status = 'hadir';
+
+            if ($hasLeave) {
+                if ($hasLeave->leave_type === 'partial' && $hasLeave->start_time && $hasLeave->end_time) {
+                    if ($hasLeave->start_time < $schedEnd && $hasLeave->end_time > $schedStart) {
+                        $isOverlapping = true;
+                        $leaveInfo = "Izin Jam (" . substr($hasLeave->start_time, 0, 5) . "-" . substr($hasLeave->end_time, 0, 5) . "): " . $hasLeave->reason;
+                    }
+                } else {
+                    $isOverlapping = true;
+                    $leaveInfo = "Izin dari Pagi: " . $hasLeave->reason;
+                }
+
+                if ($isOverlapping) {
+                    $status = stripos($hasLeave->reason, 'sakit') !== false ? 'sakit' : 'izin';
+                }
+            }
+
+            return [
+                'id' => $s->id,
+                'name' => $s->name,
+                'identifier' => $s->identifier ?? '-',
+                'status' => $status,
+                'is_attended' => ($status === 'hadir'), // Otomatis tercentang hadir jika tidak ada izin
+                'has_leave' => $isOverlapping,
+                'leave_info' => $leaveInfo,
+            ];
+        });
+
+        return response()->json([
+            'status' => 'success',
+            'schedule' => [
+                'id' => $schedule->id,
+                'class_name' => $schedule->schoolClass->name ?? 'Kelas',
+                'class_id' => $schedule->class_id,
+                'subject' => $schedule->subject ?? '-',
+                'time' => substr($schedule->start_time ?? '', 0, 5) . ' - ' . substr($schedule->end_time ?? '', 0, 5),
+            ],
+            'total_students' => $studentList->count(),
+            'default_hadir_count' => $studentList->where('is_attended', true)->count(),
+            'default_izin_count' => $studentList->where('is_attended', false)->count(),
+            'students' => $studentList->values(),
+        ]);
+    }
+
     public function store(Request $request)
     {
         // 2. Validasi input Jurnal dari HP Guru
@@ -122,53 +207,101 @@ class JournalController extends Controller
             'date' => $today
         ]);
 
-
         // ==========================================
-        // 4. ALGORITMA AUTO-SYNC PRESENSI (UKK)
-        // MENDUKUNG IZIN SEHARIAN & IZIN POTONG JAM
+        // 4. SIMPAN PRESENSI SISWA & AUTO-SYNC IZIN
         // ==========================================
-        $schedule = \App\Models\Schedule::find($request->schedule_id);
-        $schedStart = $schedule ? $schedule->start_time : '00:00:00';
-        $schedEnd   = $schedule ? $schedule->end_time   : '23:59:59';
+        $schedStart = $schedule->start_time ?? '00:00:00';
+        $schedEnd   = $schedule->end_time   ?? '23:59:59';
 
-        // Cari semua data izin yang statusnya 'approved' HARI INI
-        $approvedLeaves = LeaveRequest::where('status', 'approved')
-            ->where('start_date', '<=', $today)
-            ->where('end_date', '>=', $today)
-            ->get();
-
-        $syncedCount = 0;
-
-        foreach ($approvedLeaves as $leave) {
-            $isOverlapping = false;
-
-            if ($leave->leave_type === 'partial' && $leave->start_time && $leave->end_time) {
-                // Rumus Irisan Waktu:
-                // Izin berlaku jika jam izin bersinggungan dengan jam jadwal pelajaran ini
-                if ($leave->start_time < $schedEnd && $leave->end_time > $schedStart) {
-                    $isOverlapping = true;
-                }
-            } else {
-                // Izin Seharian Penuh: Berlaku untuk seluruh jam pelajaran hari ini
-                $isOverlapping = true;
-            }
-
-            // Jika bersinggungan, masukkan otomatis ke Attendances
-            if ($isOverlapping) {
-                Attendance::create([
-                    'journal_id' => $journal->id,
-                    'student_id' => $leave->student_id,
-                    // Jika alasan mengandung kata 'sakit', catat 'sakit', selain itu 'izin'
-                    'status'     => stripos($leave->reason, 'sakit') !== false ? 'sakit' : 'izin' 
-                ]);
-                $syncedCount++;
+        $attendancesInput = [];
+        if ($request->filled('attendances')) {
+            $rawAttendances = $request->input('attendances');
+            if (is_string($rawAttendances)) {
+                $attendancesInput = json_decode($rawAttendances, true) ?? [];
+            } elseif (is_array($rawAttendances)) {
+                $attendancesInput = $rawAttendances;
             }
         }
 
+        $summary = [
+            'total' => 0,
+            'hadir' => 0,
+            'izin'  => 0,
+            'sakit' => 0,
+            'alfa'  => 0,
+        ];
+
+        if (!empty($attendancesInput)) {
+            // Guru mengonfirmasi absensi siswa dari aplikasi mobile
+            foreach ($attendancesInput as $att) {
+                $studentId = $att['student_id'] ?? $att['id'] ?? null;
+                $status = strtolower($att['status'] ?? 'hadir');
+                if (!in_array($status, ['hadir', 'sakit', 'izin', 'alfa'])) {
+                    $status = 'hadir';
+                }
+
+                if ($studentId) {
+                    Attendance::updateOrCreate(
+                        [
+                            'journal_id' => $journal->id,
+                            'student_id' => $studentId,
+                        ],
+                        [
+                            'status' => $status,
+                        ]
+                    );
+                    $summary['total']++;
+                    $summary[$status] = ($summary[$status] ?? 0) + 1;
+                }
+            }
+        } else {
+            // Fallback otomatis: Simpan semua siswa di kelas sebagai Hadir,
+            // kecuali yang memiliki izin approved dari pagi/jam ini sebagai Izin/Sakit
+            $classStudents = \App\Models\User::where('role', 'siswa')
+                ->where('class_id', $schedule->class_id)
+                ->get();
+
+            $approvedLeaves = LeaveRequest::where('status', 'approved')
+                ->where('start_date', '<=', $today)
+                ->where('end_date', '>=', $today)
+                ->whereIn('student_id', $classStudents->pluck('id'))
+                ->get()
+                ->keyBy('student_id');
+
+            foreach ($classStudents as $student) {
+                $hasLeave = $approvedLeaves->get($student->id);
+                $isOverlapping = false;
+                $status = 'hadir';
+
+                if ($hasLeave) {
+                    if ($hasLeave->leave_type === 'partial' && $hasLeave->start_time && $hasLeave->end_time) {
+                        if ($hasLeave->start_time < $schedEnd && $hasLeave->end_time > $schedStart) {
+                            $isOverlapping = true;
+                        }
+                    } else {
+                        $isOverlapping = true;
+                    }
+
+                    if ($isOverlapping) {
+                        $status = stripos($hasLeave->reason, 'sakit') !== false ? 'sakit' : 'izin';
+                    }
+                }
+
+                Attendance::create([
+                    'journal_id' => $journal->id,
+                    'student_id' => $student->id,
+                    'status'     => $status,
+                ]);
+
+                $summary['total']++;
+                $summary[$status] = ($summary[$status] ?? 0) + 1;
+            }
+        }
 
         return response()->json([
             'status' => 'success',
-            'message' => 'Jurnal berhasil disimpan. ' . $syncedCount . ' Siswa otomatis tercatat Izin/Sakit.',
+            'message' => "Jurnal & Presensi berhasil disimpan ({$summary['hadir']} Hadir, {$summary['izin']} Izin, {$summary['sakit']} Sakit, {$summary['alfa']} Alpa).",
+            'attendance_summary' => $summary,
             'data' => $journal
         ]);
     }
