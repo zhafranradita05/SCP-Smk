@@ -253,18 +253,6 @@
 
                 <!-- Right Side: User Menu & Mobile Trigger -->
                 <div class="flex items-center space-x-3">
-                    
-                    <!-- Indikator Sesi Aktif Waka (Auto-Logout 10 Menit Tidak Aktif) -->
-                    <div id="waka-session-badge" 
-                         class="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 transition-all duration-300 shadow-2xs select-none cursor-pointer"
-                         title="Sesi aktif Waka. Otomatis diperbarui saat ada aktivitas mouse/keyboard/klik. Klik untuk perpanjang langsung.">
-                        <span class="relative flex h-2 w-2">
-                            <span id="session-ping-dot" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                            <span id="session-dot" class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                        </span>
-                        <span class="hidden sm:inline text-slate-500 font-normal">Sesi:</span>
-                        <span id="session-countdown-display" class="font-mono font-bold text-emerald-700">10:00</span>
-                    </div>
 
                     <!-- Dropdown: Profil Pengguna & Keluar -->
                     <div class="relative dropdown-container">
@@ -354,15 +342,6 @@
                     <span class="font-heading font-bold text-slate-900 text-xs">SCP Portal Waka</span>
                     <p class="text-[10px] text-slate-500">School Class Progress</p>
                 </div>
-            </div>
-
-            <!-- Sisa Waktu Sesi Aktif di Menu Mobile -->
-            <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                <span class="font-medium text-slate-600 flex items-center space-x-1.5">
-                    <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
-                    <span>Sisa Waktu Sesi:</span>
-                </span>
-                <span id="mobile-session-countdown-display" class="font-mono font-bold text-emerald-700">10:00</span>
             </div>
 
             <a href="{{ url('/waka/dashboard') }}" 
