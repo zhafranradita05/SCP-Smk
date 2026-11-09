@@ -601,8 +601,8 @@ class ScheduleController extends Controller
 
                         $lines = array_values(array_filter(array_map('trim', preg_split('/[\r\n]+|<br\s*\/?>/i', (string)$cellText))));
                         foreach ($lines as $line) {
-                            // Cek nama kelas (mendukung format XIIBR1 maupun XII BR 1)
-                            if (preg_match('/^(XII|XI|X)[\s\-_]*([A-Za-z]+)\s*([0-9]*)$/i', $line, $m)) {
+                            // Cek nama kelas (mendukung format XIIBR1 maupun XII BR 1, minimal 2 huruf jurusan agar angka romawi XI tidak terpecah jadi X I)
+                            if (preg_match('/^(XII|XI|X)[\s\-_]*([A-Za-z]{2,})\s*([0-9]*)$/i', $line, $m)) {
                                 $cleanK = strtolower(trim($m[1] . ' ' . $m[2] . ($m[3] !== '' ? ' ' . $m[3] : '')));
                                 $normK = str_replace(' ', '', $cleanK);
                                 $lookup['by_class'][$day][$timeStr][$normK] = $currentRoom;
@@ -714,8 +714,8 @@ class ScheduleController extends Controller
             $clean = preg_replace('/^11\s+/', 'xi ', $clean);
             $clean = preg_replace('/^12\s+/', 'xii ', $clean);
 
-            // Pisahkan spasi nomor rombel (misal: "XII BR1" -> "xii br 1")
-            if (preg_match('/^(xii|xi|x)\s*([a-z]+)\s*([0-9]*)$/i', $clean, $m)) {
+            // Pisahkan spasi nomor rombel (misal: "XII BR1" -> "xii br 1", minimal 2 huruf jurusan)
+            if (preg_match('/^(xii|xi|x)\s*([a-z]{2,})\s*([0-9]*)$/i', $clean, $m)) {
                 $clean = trim($m[1] . ' ' . $m[2] . ($m[3] !== '' ? ' ' . $m[3] : ''));
             }
 
@@ -735,8 +735,8 @@ class ScheduleController extends Controller
                 }
             }
 
-            // Jika belum ada dan merupakan nama kelas sah, otomatis buat kelas baru
-            if (preg_match('/^(x|xi|xii)\b/i', $clean)) {
+            // Jika belum ada dan merupakan nama kelas sah (harus memuat tingkat romawi dan jurusan minimal 2 huruf)
+            if (preg_match('/^(x|xi|xii)\s+[a-z]{2,}\b/i', $clean)) {
                 $created = SchoolClass::create(['name' => strtoupper($clean)]);
                 $classes->push($created);
                 return $created->id;
@@ -763,8 +763,8 @@ class ScheduleController extends Controller
                 $line = trim($line);
                 if (empty($line) || $line === '---' || $line === '-') continue;
 
-                // Cek Kelas (mendukung format XIIBR1 maupun XII BR 1)
-                if (!$class && preg_match('/^(XII|XI|X)[\s\-_]*([A-Za-z]+)\s*([0-9]*)$/i', $line, $m)) {
+                // Cek Kelas (mendukung format XIIBR1 maupun XII BR 1, minimal 2 huruf jurusan)
+                if (!$class && preg_match('/^(XII|XI|X)[\s\-_]*([A-Za-z]{2,})\s*([0-9]*)$/i', $line, $m)) {
                     $class = trim($m[1] . ' ' . $m[2] . ($m[3] !== '' ? ' ' . $m[3] : ''));
                     continue;
                 }

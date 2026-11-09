@@ -202,6 +202,7 @@ Route::middleware(['auth', 'role:waka_kurikulum', 'active.session'])->group(func
     Route::post('/waka/master/room', [MasterDataController::class, 'storeRoom'])->name('room.store');
     Route::post('/waka/master/class', [MasterDataController::class, 'storeClass'])->name('class.store');
     Route::put('/waka/master/class/{class}', [MasterDataController::class, 'updateClass'])->name('class.update');
+    Route::delete('/waka/master/class/{class}', [MasterDataController::class, 'destroyClass'])->name('class.destroy');
 
     // Notifikasi / Reminder Waka ke Guru
     Route::post('/waka/reminders/send', [ReminderController::class, 'store'])->name('reminders.store');

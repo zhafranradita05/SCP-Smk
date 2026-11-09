@@ -294,9 +294,9 @@ class MasterDataController extends Controller
                 $kodeRuangVal = ($colMap['kode_ruang'] !== false && isset($row[$colMap['kode_ruang']])) ? trim((string)$row[$colMap['kode_ruang']]) : '';
                 $namaRuangVal = ($colMap['nama_ruang'] !== false && isset($row[$colMap['nama_ruang']])) ? trim((string)$row[$colMap['nama_ruang']]) : '';
 
-                // Validasi nama kelas: harus diawali X, XI, atau XII
-                if (!empty($kelasVal) && !preg_match('/^(X|XI|XII)\b/i', $kelasVal)) {
-                    // Bukan nama kelas valid (mungkin nomor urut atau header terlewat)
+                // Validasi nama kelas: harus diawali X, XI, atau XII dan memiliki jurusan minimal 2 huruf
+                if (!empty($kelasVal) && !preg_match('/^(X|XI|XII)\s+[A-Za-z]{2,}/i', $kelasVal)) {
+                    // Bukan nama kelas valid (mungkin nomor urut, header terlewat, atau romawi saja)
                     $kelasVal = '';
                 }
 
@@ -643,6 +643,39 @@ class MasterDataController extends Controller
         }
 
         return redirect()->back()->with('success', 'Data kelas ' . $class->name . ' (Wali Kelas & Guru BK) berhasil diperbarui!');
+    }
+
+    /**
+     * Menghapus data kelas dari master data
+     */
+    public function destroyClass(SchoolClass $class)
+    {
+        $className = $class->name;
+
+        // Cek apakah ada siswa di kelas ini
+        $studentCount = User::where('class_id', $class->id)->count();
+        if ($studentCount > 0) {
+            return redirect()->back()->with('error', "Kelas {$className} tidak dapat dihapus karena masih memiliki {$studentCount} siswa terdaftar!");
+        }
+
+        // Lepaskan jadwal yang mungkin terhubung
+        \App\Models\Schedule::where('class_id', $class->id)->delete();
+
+        // Jika ada wali kelas, kembalikan role ke guru jika tidak memegang kelas lain
+        if ($class->homeroom_teacher_id) {
+            $teacherId = $class->homeroom_teacher_id;
+            $hasOtherClass = SchoolClass::where('homeroom_teacher_id', $teacherId)->where('id', '!=', $class->id)->exists();
+            if (!$hasOtherClass) {
+                $teacher = User::find($teacherId);
+                if ($teacher && $teacher->role === 'wali_kelas') {
+                    $teacher->update(['role' => 'guru']);
+                }
+            }
+        }
+
+        $class->delete();
+
+        return redirect()->back()->with('success', "Kelas {$className} berhasil dihapus dari sistem!");
     }
 
     /**

@@ -211,11 +211,20 @@
                                 @endif
                             </td>
                             <td class="p-3 text-center">
-                                <button type="button" 
-                                        onclick="openEditClassModal('{{ $class->id }}', '{{ $class->name }}', '{{ $class->homeroom_teacher_id }}', '{{ $class->bk_teacher_id }}')" 
-                                        class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition">
-                                    {{ ($class->homeroom_teacher_id || $class->bk_teacher_id) ? 'Ubah Guru' : 'Atur Guru' }}
-                                </button>
+                                <div class="flex items-center justify-center space-x-1.5">
+                                    <button type="button" 
+                                            onclick="openEditClassModal('{{ $class->id }}', '{{ $class->name }}', '{{ $class->homeroom_teacher_id }}', '{{ $class->bk_teacher_id }}')" 
+                                            class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition">
+                                        {{ ($class->homeroom_teacher_id || $class->bk_teacher_id) ? 'Ubah Guru' : 'Atur Guru' }}
+                                    </button>
+                                    <form action="{{ route('class.destroy', $class->id) }}" method="POST" class="inline" onsubmit="return confirm('Apakah Anda yakin ingin menghapus kelas {{ $class->name }}? Pastikan kelas tidak memiliki siswa!')">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition" title="Hapus Kelas">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                        </button>
+                                    </form>
+                                </div>
                             </td>
                         </tr>
                         @empty
