@@ -84,11 +84,18 @@ Route::get('deploy-migrate-{secret}', function (Request $request, $secret) {
         }
         Artisan::call('optimize:clear');
 
+        $stats = [
+            'total_rooms' => \App\Models\Room::count(),
+            'total_schedules' => \App\Models\Schedule::count(),
+            'distinct_schedule_rooms' => \App\Models\Schedule::distinct('room_id')->count('room_id'),
+        ];
+
         return response()->json([
             'status' => 'success',
             'message' => 'Migrasi dan inisialisasi database berhasil!',
             'migrate_output' => $migrateOutput,
             'seed_output' => $seedOutput,
+            'stats' => $stats,
         ]);
     } catch (\Throwable $e) {
         return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
