@@ -86,6 +86,8 @@ Route::get('deploy-migrate-{secret}', function (Request $request, $secret) {
 
         $stats = [
             'total_rooms' => \App\Models\Room::count(),
+            'total_classes' => \App\Models\SchoolClass::count(),
+            'has_xi_class' => \App\Models\SchoolClass::where('name', 'X I')->exists(),
             'total_schedules' => \App\Models\Schedule::count(),
             'distinct_schedule_rooms' => \App\Models\Schedule::distinct('room_id')->count('room_id'),
         ];
