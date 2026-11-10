@@ -60,11 +60,9 @@ Route::post('/forgot-password', [ForgotPasswordController::class, 'resetPassword
 // 2. Rute Cetak Laporan Rekapitulasi Izin Siswa (Wali Kelas & Guru BK: mendukung Web Session & Token Mobile)
 Route::get('/leaves/recap/print', [\App\Http\Controllers\Web\RecapController::class, 'printLeaveRecap'])->name('leaves.recap.print');
 
-// 2b. Rute Halaman Jadwal Mengajar Guru & Status Jurnal (Guru, Wali Kelas & Guru BK)
-Route::middleware(['auth', 'role:guru,wali_kelas,guru_bk'])->group(function () {
-    Route::get('/teacher/schedule', [\App\Http\Controllers\Web\TeacherScheduleController::class, 'index'])->name('teacher.schedule');
-    Route::get('/guru/jadwal', fn() => redirect()->route('teacher.schedule'));
-});
+// 2b. Akses Jadwal Guru di Website Dialihkan (Web Khusus Waka Kurikulum)
+Route::get('/teacher/schedule', fn() => redirect()->route('login')->withErrors(['username' => 'Akses website khusus untuk Waka Kurikulum. Untuk Guru, silakan gunakan Aplikasi Mobile SCP.']));
+Route::get('/guru/jadwal', fn() => redirect()->route('login')->withErrors(['username' => 'Akses website khusus untuk Waka Kurikulum. Untuk Guru, silakan gunakan Aplikasi Mobile SCP.']));
 
 // 3. Rute Terotentikasi Umum (Semua Pengguna yang Berhasil Login Web)
 Route::middleware('auth')->group(function () {

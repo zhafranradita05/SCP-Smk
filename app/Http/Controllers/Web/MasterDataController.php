@@ -655,25 +655,21 @@ class MasterDataController extends Controller
     {
         $className = $class->name;
 
-        // Cek apakah ada siswa di kelas ini
+        // 1. Cek apakah ada siswa di kelas ini
         $studentCount = User::where('class_id', $class->id)->count();
         if ($studentCount > 0) {
-            return redirect()->back()->with('error', "Kelas {$className} tidak dapat dihapus karena masih memiliki {$studentCount} siswa terdaftar!");
+            return redirect()->back()->with('error', "Kelas {$className} tidak dapat dihapus karena masih memiliki {$studentCount} siswa terdaftar! Pindahkan data siswa terlebih dahulu.");
         }
 
-        // Lepaskan jadwal yang mungkin terhubung
-        \App\Models\Schedule::where('class_id', $class->id)->delete();
+        // 2. Cek apakah ada jadwal yang terhubung di kelas ini (Data yang berelasi dilarang dihapus)
+        $scheduleCount = \App\Models\Schedule::where('class_id', $class->id)->count();
+        if ($scheduleCount > 0) {
+            return redirect()->back()->with('error', "Kelas {$className} tidak dapat dihapus karena masih memiliki {$scheduleCount} jadwal pelajaran yang aktif! Hapus atau pindahkan jadwal terlebih dahulu.");
+        }
 
-        // Jika ada wali kelas, kembalikan role ke guru jika tidak memegang kelas lain
+        // 3. Cek apakah ada wali kelas yang masih ditugaskan di kelas ini
         if ($class->homeroom_teacher_id) {
-            $teacherId = $class->homeroom_teacher_id;
-            $hasOtherClass = SchoolClass::where('homeroom_teacher_id', $teacherId)->where('id', '!=', $class->id)->exists();
-            if (!$hasOtherClass) {
-                $teacher = User::find($teacherId);
-                if ($teacher && $teacher->role === 'wali_kelas') {
-                    $teacher->update(['role' => 'guru']);
-                }
-            }
+            return redirect()->back()->with('error', "Kelas {$className} tidak dapat dihapus karena masih memiliki Wali Kelas terdaftar! Lepaskan penugasan Wali Kelas terlebih dahulu.");
         }
 
         $class->delete();

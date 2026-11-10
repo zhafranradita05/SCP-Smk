@@ -101,3 +101,4 @@ class CompleteWeeklyScheduleSeeder extends Seeder
         echo "CompleteWeeklyScheduleSeeder: {$createdCount} jadwal baru berhasil ditambahkan untuk memastikan semua guru memiliki jadwal penuh 1 minggu.\n";
     }
 }
+

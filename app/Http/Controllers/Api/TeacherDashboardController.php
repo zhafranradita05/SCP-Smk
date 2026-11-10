@@ -98,6 +98,11 @@ class TeacherDashboardController extends Controller
                 $timeRange = substr($sched->start_time, 0, 5) . ' - ' . substr($sched->end_time, 0, 5);
                 $isMyTeaching = ($sched->teacher_id == $user->id);
 
+                $todayDate = $now->toDateString();
+                $hasJournal = \App\Models\Journal::where('schedule_id', $sched->id)
+                    ->where('date', $todayDate)
+                    ->exists();
+
                 $scheduleItems[] = [
                     'id'             => $sched->id,
                     'subject'        => $sched->subject,
@@ -111,7 +116,9 @@ class TeacherDashboardController extends Controller
                     'start_time'     => substr($sched->start_time, 0, 5),
                     'end_time'       => substr($sched->end_time, 0, 5),
                     'time_range'     => $timeRange,
-                    'status'         => $status
+                    'status'         => $hasJournal ? 'Jurnal Selesai' : $status,
+                    'has_journal'    => $hasJournal,
+                    'journal_status' => $hasJournal ? 'Selesai Diisi' : 'Belum Diisi',
                 ];
             }
         }

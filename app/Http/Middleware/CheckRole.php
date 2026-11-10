@@ -50,20 +50,18 @@ class CheckRole
                 ], 403);
             }
 
-            // Keamanan Khusus Siswa & Orang Tua: Dilarang keras mengakses halaman web internal waka
-            if (in_array($user->role, ['siswa', 'orang_tua'])) {
+            // Keamanan Ketat: Akses portal website hanya khusus untuk Waka Kurikulum
+            if ($request->hasSession()) {
                 Auth::logout();
-                if ($request->hasSession()) {
-                    $request->session()->invalidate();
-                    $request->session()->regenerateToken();
-                }
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
 
                 return redirect()->route('login')->withErrors([
-                    'username' => 'Akses ditolak! Akun ' . ($user->role === 'orang_tua' ? 'Orang Tua' : 'Siswa') . ' hanya dapat digunakan melalui aplikasi mobile.',
+                    'username' => 'Akses ditolak! Portal website ini khusus untuk Waka Kurikulum. Untuk Guru, Wali Kelas, Guru BK, Siswa, dan Orang Tua, silakan login melalui Aplikasi Mobile SCP.',
                 ]);
             }
 
-            abort(403, 'Akses ditolak. Halaman ini hanya untuk pengguna dengan hak akses: ' . implode(', ', $allowedRoles));
+            abort(403, 'Akses ditolak. Resource ini hanya untuk pengguna dengan hak akses: ' . implode(', ', $allowedRoles));
         }
 
         return $next($request);

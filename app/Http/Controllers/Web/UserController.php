@@ -369,7 +369,7 @@ class UserController extends Controller
     }
 
     /**
-     * Menghapus pengguna
+     * Menghapus pengguna (Diproteksi Ketat: Data yang masih berelasi tidak boleh dihapus)
      */
     public function destroy(User $user)
     {
@@ -377,14 +377,57 @@ class UserController extends Controller
             return redirect()->back()->with('error', 'Anda tidak dapat menghapus akun Anda sendiri!');
         }
 
-        // Jika siswa dihapus, hapus juga akun Orang Tua terkait
-        if ($user->role === 'siswa') {
-            User::where('student_id', $user->id)->delete();
+        // 1. Validasi Relasi Guru / Wali Kelas / Guru BK
+        if (in_array($user->role, ['guru', 'wali_kelas', 'guru_bk'])) {
+            $schedCount = \App\Models\Schedule::where('teacher_id', $user->id)->count();
+            if ($schedCount > 0) {
+                return redirect()->back()->with('error', "Guru {$user->name} tidak dapat dihapus karena masih memiliki {$schedCount} data jadwal mengajar aktif! Hapus atau pindahkan jadwal terlebih dahulu.");
+            }
+
+            $homeroomCount = \App\Models\SchoolClass::where('homeroom_teacher_id', $user->id)->count();
+            if ($homeroomCount > 0) {
+                return redirect()->back()->with('error', "Guru {$user->name} tidak dapat dihapus karena masih terdaftar sebagai Wali Kelas pada {$homeroomCount} kelas binaan!");
+            }
+
+            $journalCount = \App\Models\Journal::whereHas('schedule', function ($q) use ($user) {
+                $q->where('teacher_id', $user->id);
+            })->count();
+            if ($journalCount > 0) {
+                return redirect()->back()->with('error', "Guru {$user->name} tidak dapat dihapus karena memiliki {$journalCount} data riwayat Jurnal KBM!");
+            }
         }
 
+        // 2. Validasi Relasi Siswa
+        if ($user->role === 'siswa') {
+            $attCount = \App\Models\Attendance::where('student_id', $user->id)->count();
+            if ($attCount > 0) {
+                return redirect()->back()->with('error', "Siswa {$user->name} tidak dapat dihapus karena masih memiliki {$attCount} data riwayat presensi kehadiran!");
+            }
+
+            $leaveCount = \App\Models\LeaveRequest::where('student_id', $user->id)->count();
+            if ($leaveCount > 0) {
+                return redirect()->back()->with('error', "Siswa {$user->name} tidak dapat dihapus karena memiliki {$leaveCount} riwayat pengajuan izin/sakit!");
+            }
+
+            // Cek jika akun memiliki akun orang tua terkait
+            $parentCount = User::where('student_id', $user->id)->count();
+            if ($parentCount > 0) {
+                return redirect()->back()->with('error', "Siswa {$user->name} tidak dapat dihapus karena masih terhubung dengan data akun Orang Tua / Wali!");
+            }
+        }
+
+        // 3. Validasi Relasi Orang Tua
+        if ($user->role === 'orang_tua' && $user->student_id) {
+            $hasStudent = User::where('id', $user->student_id)->exists();
+            if ($hasStudent) {
+                return redirect()->back()->with('error', "Akun Orang Tua ini tidak dapat dihapus karena masih terhubung aktif dengan data akun Siswa!");
+            }
+        }
+
+        $userName = $user->name;
         $user->delete();
 
-        return redirect()->back()->with('success', 'Pengguna berhasil dihapus!');
+        return redirect()->back()->with('success', "Pengguna {$userName} berhasil dihapus dari sistem!");
     }
 
     /**

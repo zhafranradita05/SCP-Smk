@@ -2181,10 +2181,17 @@ class ScheduleController extends Controller
     {
         $setting = Setting::first();
         if ($setting && $setting->is_schedule_locked) {
-            return back()->with('error', 'Gagal menghapus! Jadwal sedang di-KUNCI.');
+            return back()->with('error', 'Gagal menghapus! Jadwal sedang di-KUNCI (Lock Schedule aktif).');
         }
 
         $schedule = Schedule::findOrFail($id);
+
+        // Data yang berelasi dilarang dihapus: Cek apakah jadwal memiliki Jurnal KBM atau Presensi Siswa
+        $journalCount = \App\Models\Journal::where('schedule_id', $schedule->id)->count();
+        if ($journalCount > 0) {
+            return back()->with('error', "Gagal menghapus! Jadwal ini tidak dapat dihapus karena sudah memiliki {$journalCount} data riwayat Jurnal KBM / Presensi Siswa terkait.");
+        }
+
         $schedule->delete();
 
         return back()->with('success', 'Jadwal berhasil dihapus!');

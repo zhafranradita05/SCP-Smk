@@ -148,8 +148,20 @@ class JournalController extends Controller
             ];
         });
 
+        // Cek apakah jurnal sudah pernah diisi untuk jadwal ini hari ini
+        $existingJournal = Journal::where('schedule_id', $schedule->id)
+            ->where('date', $today)
+            ->first();
+
         return response()->json([
             'status' => 'success',
+            'is_already_filled' => ($existingJournal !== null),
+            'existing_journal' => $existingJournal ? [
+                'id' => $existingJournal->id,
+                'materi' => $existingJournal->materi,
+                'photo' => $existingJournal->photo,
+                'time_submitted' => $existingJournal->created_at ? $existingJournal->created_at->format('H:i') : null,
+            ] : null,
             'schedule' => [
                 'id' => $schedule->id,
                 'class_name' => $schedule->schoolClass->name ?? 'Kelas',
@@ -195,9 +207,22 @@ class JournalController extends Controller
             ], 422);
         }
 
+        $today = date('Y-m-d');
+
+        // Validasi Mutlak: Jika jurnal untuk jadwal ini sudah diisi hari ini, tidak boleh diisi lagi
+        $alreadyFilled = Journal::where('schedule_id', $request->schedule_id)
+            ->where('date', $today)
+            ->exists();
+
+        if ($alreadyFilled) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Jurnal untuk sesi jadwal mengajar ini sudah berhasil diisi hari ini dan tidak dapat diisi ulang!'
+            ], 422);
+        }
+
         // Simpan foto kelas
         $photoPath = $request->file('photo')->store('journals', 'public');
-        $today = date('Y-m-d');
 
         // 3. Simpan data Jurnal
         $journal = Journal::create([
