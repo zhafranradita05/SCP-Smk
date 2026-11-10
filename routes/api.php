@@ -84,18 +84,8 @@ Route::get('deploy-migrate-{secret}', function (Request $request, $secret) {
         }
         Artisan::call('optimize:clear');
 
-        $allRosyida = \App\Models\User::where('name', 'like', '%ROSYIDA%')->orWhere('username', 'like', '%rosyida%')->get();
         $stats = [
-            'all_rosyida_users' => $allRosyida->map(function ($u) {
-                return [
-                    'id' => $u->id,
-                    'name' => $u->name,
-                    'username' => $u->username,
-                    'role' => $u->role,
-                    'nip' => $u->identifier,
-                    'schedules_count' => \App\Models\Schedule::where('teacher_id', $u->id)->count(),
-                ];
-            }),
+            'sched_1902_1903' => \App\Models\Schedule::whereIn('id', [1902, 1903])->get(),
             'active_cycle' => \App\Models\Setting::first()->active_cycle ?? null,
             'carbon_now' => [
                 'day' => \Carbon\Carbon::now('Asia/Jakarta')->format('l'),
