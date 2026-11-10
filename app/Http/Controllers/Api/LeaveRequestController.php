@@ -8,10 +8,11 @@ use App\Models\LeaveRequest;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Carbon\Carbon;
 
 class LeaveRequestController extends Controller
 {
-        // 1. (SISWA) Mengajukan Izin/Sakit (Mendukung Seharian Penuh & Memotong Jam Tertentu)
+    // 1. (SISWA) Mengajukan Izin/Sakit (Mendukung Seharian Penuh & Memotong Jam Tertentu)
     public function store(Request $request)
     {
         $request->validate([
@@ -23,6 +24,49 @@ class LeaveRequestController extends Controller
             'start_time' => 'required_if:leave_type,partial|nullable',
             'end_time'   => 'required_if:leave_type,partial|nullable',
         ]);
+
+        $user = Auth::user();
+        $targetStudentId = ($user->role === 'orang_tua' && $user->student_id) ? $user->student_id : $user->id;
+
+        $today = Carbon::now('Asia/Jakarta')->toDateString();
+
+        // 1. Batasi pengajuan maksimal 1 kali dalam 1 hari per siswa (membatasi jumlah antrean approval di wali kelas)
+        $alreadySubmittedToday = LeaveRequest::where('student_id', $targetStudentId)
+            ->whereDate('created_at', $today)
+            ->whereIn('status', ['pending', 'approved'])
+            ->first();
+
+        if ($alreadySubmittedToday) {
+            $statusLabel = $alreadySubmittedToday->status === 'approved' ? 'sudah disetujui' : 'sedang menunggu verifikasi';
+            return response()->json([
+                'status'  => 'error',
+                'message' => "Pengajuan izin dibatasi maksimal 1 kali dalam 1 hari untuk setiap siswa. Pengajuan izin Anda hari ini {$statusLabel}."
+            ], 422);
+        }
+
+        // 2. Cegah pengajuan ganda pada rentang tanggal yang saling bertumpuk (overlapping)
+        $overlappingLeave = LeaveRequest::where('student_id', $targetStudentId)
+            ->whereIn('status', ['pending', 'approved'])
+            ->where(function ($query) use ($request) {
+                $query->whereBetween('start_date', [$request->start_date, $request->end_date])
+                    ->orWhereBetween('end_date', [$request->start_date, $request->end_date])
+                    ->orWhere(function ($sub) use ($request) {
+                        $sub->where('start_date', '<=', $request->start_date)
+                            ->where('end_date', '>=', $request->end_date);
+                    });
+            })
+            ->first();
+
+        if ($overlappingLeave) {
+            $statusLabel = $overlappingLeave->status === 'approved' ? 'sudah disetujui' : 'sedang menunggu verifikasi';
+            $rangeText = $overlappingLeave->start_date === $overlappingLeave->end_date 
+                ? $overlappingLeave->start_date 
+                : "{$overlappingLeave->start_date} s/d {$overlappingLeave->end_date}";
+            return response()->json([
+                'status'  => 'error',
+                'message' => "Siswa sudah memiliki pengajuan izin pada tanggal {$rangeText} yang {$statusLabel}."
+            ], 422);
+        }
 
         // Simpan file foto/surat ke folder public/storage/leaves
         $path = $request->file('proof_file')->store('leaves', 'public');
@@ -180,6 +224,12 @@ class LeaveRequestController extends Controller
             'rejected' => $leaves->where('status', 'rejected')->count(),
         ];
 
+        $today = Carbon::now('Asia/Jakarta')->toDateString();
+        $submittedToday = $leaves->first(function ($item) use ($today) {
+            return Carbon::parse($item->created_at)->toDateString() === $today
+                && in_array($item->status, ['pending', 'approved']);
+        });
+
         $roleSubtitle = $user->role === 'orang_tua'
             ? ('Orang Tua dari ' . ($targetStudent->name ?? 'Siswa'))
             : ($className ?? 'Siswa');
@@ -196,6 +246,13 @@ class LeaveRequestController extends Controller
                 'student_name'  => $targetStudent ? $targetStudent->name : null,
                 'student_nis'   => $targetStudent ? $targetStudent->identifier : null,
             ],
+            'can_submit_today' => ($submittedToday === null),
+            'submitted_today'  => $submittedToday ? [
+                'id'         => $submittedToday->id,
+                'status'     => $submittedToday->status,
+                'start_date' => $submittedToday->start_date,
+                'end_date'   => $submittedToday->end_date,
+            ] : null,
             'summary' => $summary,
             'data'    => $leaves
         ]);
