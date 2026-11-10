@@ -2524,6 +2524,8 @@ class ScheduleController extends Controller
         // Ambil semua jadwal untuk menghitung statistik per Jurusan
         $allSchedules = Schedule::with('schoolClass')->get();
         $totalAllSchedules = $allSchedules->count();
+        $totalPutaran1 = $allSchedules->where('cycle', 'putaran_1')->count();
+        $totalPutaran2 = $allSchedules->where('cycle', 'putaran_2')->count();
 
         // Buat daftar Jurusan yang ada di sekolah secara dinamis
         $majors = [];
@@ -2575,7 +2577,9 @@ class ScheduleController extends Controller
             'selectedCycle',
             'selectedDay',
             'search',
-            'totalAllSchedules'
+            'totalAllSchedules',
+            'totalPutaran1',
+            'totalPutaran2'
         ));
     }
 

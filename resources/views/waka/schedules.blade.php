@@ -311,7 +311,41 @@
             </div>
         </div>
 
-        <!-- 1. TABS NAVIGASI JURUSAN (PILIHAN JURUSAN CEPAT) -->
+        <!-- 1. BAR PILIHAN JADWAL PUTARAN (PUTARAN 1 / PUTARAN 2 / SEMUA) -->
+        <div class="px-6 py-3.5 bg-slate-50/80 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    Pilihan Jadwal Putaran:
+                </span>
+            </div>
+
+            <div class="inline-flex p-1 bg-white rounded-xl border border-slate-200 shadow-2xs gap-1" id="cycleSelectorContainer">
+                <button type="button" 
+                    onclick="selectCycle('putaran_1')" 
+                    id="btn-cycle-putaran_1" 
+                    class="cycle-tab-btn inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition {{ $selectedCycle === 'putaran_1' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100' }}">
+                    <span>Putaran 1 (Produktif)</span>
+                    <span class="px-1.5 py-0.5 rounded-full text-[10px] {{ $selectedCycle === 'putaran_1' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700' }}">{{ $totalPutaran1 ?? 0 }}</span>
+                </button>
+                <button type="button" 
+                    onclick="selectCycle('putaran_2')" 
+                    id="btn-cycle-putaran_2" 
+                    class="cycle-tab-btn inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition {{ $selectedCycle === 'putaran_2' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100' }}">
+                    <span>Putaran 2 (Normatif & Adaptif)</span>
+                    <span class="px-1.5 py-0.5 rounded-full text-[10px] {{ $selectedCycle === 'putaran_2' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700' }}">{{ $totalPutaran2 ?? 0 }}</span>
+                </button>
+                <button type="button" 
+                    onclick="selectCycle('all')" 
+                    id="btn-cycle-all" 
+                    class="cycle-tab-btn inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition {{ ($selectedCycle === 'all' || empty($selectedCycle)) ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100' }}">
+                    <span>Semua Putaran</span>
+                    <span class="px-1.5 py-0.5 rounded-full text-[10px] {{ ($selectedCycle === 'all' || empty($selectedCycle)) ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700' }}">{{ $totalAllSchedules ?? 0 }}</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- 2. TABS NAVIGASI JURUSAN (PILIHAN JURUSAN CEPAT) -->
         <div class="px-6 pt-4 pb-2 border-b border-slate-100 bg-slate-50/70">
             <div class="flex items-center gap-2 overflow-x-auto pb-2" id="majorTabsContainer">
                 <!-- Tab Semua Jurusan -->
@@ -338,8 +372,10 @@
             </div>
         </div>
 
-        <!-- 2. TOOLBAR FILTER KELAS, SIKLUS, HARI & PENCARIAN -->
-        <div class="p-4 bg-white border-b border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <!-- 3. TOOLBAR FILTER KELAS, HARI & PENCARIAN -->
+        <div class="p-4 bg-white border-b border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <input type="hidden" id="filterCycle" value="{{ $selectedCycle ?? 'all' }}">
+
             <!-- Filter Kelas (Sesuai Jurusan Terpilih) -->
             <div>
                 <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Filter Kelas:</label>
@@ -354,16 +390,6 @@
                             @endforeach
                         </optgroup>
                     @endforeach
-                </select>
-            </div>
-
-            <!-- Filter Siklus/Putaran -->
-            <div>
-                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Putaran:</label>
-                <select id="filterCycle" onchange="applyFilters()" class="w-full text-xs p-2 border rounded-lg border-slate-200 bg-white text-slate-800 font-semibold focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
-                    <option value="all" {{ $selectedCycle === 'all' ? 'selected' : '' }}>Semua Putaran</option>
-                    <option value="putaran_1" {{ $selectedCycle === 'putaran_1' ? 'selected' : '' }}>Putaran 1 (Produktif)</option>
-                    <option value="putaran_2" {{ $selectedCycle === 'putaran_2' ? 'selected' : '' }}>Putaran 2 (Normada)</option>
                 </select>
             </div>
 
@@ -829,11 +855,31 @@
         }
     }
 
+    function selectCycle(cycle) {
+        const input = document.getElementById('filterCycle');
+        if (input) input.value = cycle;
+
+        document.querySelectorAll('.cycle-tab-btn').forEach(btn => {
+            btn.className = 'cycle-tab-btn inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition text-slate-600 hover:text-slate-900 hover:bg-slate-100';
+            const badge = btn.querySelector('span:last-child');
+            if (badge) badge.className = 'px-1.5 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-700';
+        });
+
+        const activeBtn = document.getElementById('btn-cycle-' + cycle);
+        if (activeBtn) {
+            activeBtn.className = 'cycle-tab-btn inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition bg-blue-600 text-white shadow-xs';
+            const badge = activeBtn.querySelector('span:last-child');
+            if (badge) badge.className = 'px-1.5 py-0.5 rounded-full text-[10px] bg-white/20 text-white';
+        }
+
+        applyFilters();
+    }
+
     function resetAllFilters() {
         if (document.getElementById('filterClass')) document.getElementById('filterClass').value = 'all';
-        if (document.getElementById('filterCycle')) document.getElementById('filterCycle').value = 'all';
         if (document.getElementById('filterDay')) document.getElementById('filterDay').value = 'all';
         if (document.getElementById('filterSearch')) document.getElementById('filterSearch').value = '';
+        selectCycle('all');
         filterMajor('all');
     }
 
