@@ -2198,31 +2198,50 @@ class ScheduleController extends Controller
     }
 
     /**
-     * Hapus Semua Jadwal untuk Keperluan Simulasi & Reset Pengujian
+     * Hapus Seluruh Jadwal untuk Keperluan Simulasi & Reset Pengujian
+     * Mendukung penghapusan seluruh putaran sekaligus atau putaran tertentu (Putaran 1 / Putaran 2)
      */
     public function destroyAll(Request $request)
     {
-        $setting = Setting::first();
-        if ($setting && $setting->is_schedule_locked) {
-            return back()->with('error', 'Gagal! Jadwal sedang di-KUNCI (Lock Schedule aktif). Buka kunci jadwal terlebih dahulu.');
-        }
+        $targetScope = $request->input('scope', 'all'); // 'all', 'putaran_1', 'putaran_2'
 
         try {
-            $deletedCount = Schedule::count();
+            $deletedCount = 0;
 
-            \Illuminate\Support\Facades\DB::transaction(function () {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($targetScope, &$deletedCount) {
                 \Illuminate\Support\Facades\Schema::disableForeignKeyConstraints();
 
-                // Bersihkan data dependensi jurnal, absensi, dan pengingat yang terkait jadwal simulasi
-                \App\Models\Attendance::truncate();
-                \App\Models\Journal::truncate();
-                \App\Models\Reminder::truncate();
-                Schedule::truncate();
+                if ($targetScope === 'putaran_1') {
+                    $cycleVariants = ['putaran_1', '1', 'Putaran 1', 'PUTARAN 1', 'PUT 1'];
+                    $schedIds = Schedule::whereIn('cycle', $cycleVariants)->pluck('id');
+                    $deletedCount = $schedIds->count();
+                    \App\Models\Journal::whereIn('schedule_id', $schedIds)->delete();
+                    Schedule::whereIn('id', $schedIds)->delete();
+                } elseif ($targetScope === 'putaran_2') {
+                    $cycleVariants = ['putaran_2', '2', 'Putaran 2', 'PUTARAN 2', 'PUT 2'];
+                    $schedIds = Schedule::whereIn('cycle', $cycleVariants)->pluck('id');
+                    $deletedCount = $schedIds->count();
+                    \App\Models\Journal::whereIn('schedule_id', $schedIds)->delete();
+                    Schedule::whereIn('id', $schedIds)->delete();
+                } else {
+                    $deletedCount = Schedule::count();
+                    \App\Models\Attendance::truncate();
+                    \App\Models\Journal::truncate();
+                    \App\Models\Reminder::truncate();
+                    Schedule::truncate();
+                }
+
+                // Otomatis buka kunci jadwal jika sedang terkunci agar Waka dapat bebas mengimpor jadwal simulasi baru
+                $setting = Setting::first();
+                if ($setting && $setting->is_schedule_locked) {
+                    $setting->update(['is_schedule_locked' => false]);
+                }
 
                 \Illuminate\Support\Facades\Schema::enableForeignKeyConstraints();
             });
 
-            return back()->with('success', "Berhasil! Seluruh data jadwal KBM ({$deletedCount} jadwal) dan catatan jurnal simulasi berhasil dikosongkan.");
+            $scopeLabel = ($targetScope === 'putaran_1') ? 'Putaran 1' : (($targetScope === 'putaran_2') ? 'Putaran 2' : 'Semua Putaran (Putaran 1 & Putaran 2)');
+            return back()->with('success', "Berhasil! Data jadwal KBM ({$scopeLabel}: {$deletedCount} jadwal) dan catatan simulasi terkait berhasil dihapus.");
         } catch (\Throwable $e) {
             return back()->with('error', 'Terjadi kesalahan saat menghapus seluruh jadwal: ' . $e->getMessage());
         }
