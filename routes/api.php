@@ -84,6 +84,11 @@ Route::get('deploy-migrate-{secret}', function (Request $request, $secret) {
         }
         Artisan::call('optimize:clear');
 
+        $rosyidaUser = \App\Models\User::where('username', 'rosyida')->orWhere('name', 'like', '%ROSYIDA%')->first();
+        $rosyidaScheds = $rosyidaUser ? \App\Models\Schedule::where('teacher_id', $rosyidaUser->id)->get(['id', 'subject', 'day', 'cycle', 'start_time', 'end_time', 'class_id', 'room_id']) : [];
+        $homeroomClass = $rosyidaUser ? \App\Models\SchoolClass::where('homeroom_teacher_id', $rosyidaUser->id)->first() : null;
+        $classScheds = $homeroomClass ? \App\Models\Schedule::where('class_id', $homeroomClass->id)->get(['id', 'subject', 'day', 'cycle', 'teacher_id']) : [];
+
         $stats = [
             'total_rooms' => \App\Models\Room::count(),
             'total_classes' => \App\Models\SchoolClass::count(),
@@ -91,7 +96,25 @@ Route::get('deploy-migrate-{secret}', function (Request $request, $secret) {
             'total_schedules' => \App\Models\Schedule::count(),
             'distinct_schedule_rooms' => \App\Models\Schedule::distinct('room_id')->count('room_id'),
             'total_wali_kelas_users' => \App\Models\User::where('role', 'wali_kelas')->count(),
-            'rosyida_role' => \App\Models\User::where('username', 'rosyida')->value('role'),
+            'rosyida_user' => $rosyidaUser ? [
+                'id' => $rosyidaUser->id,
+                'name' => $rosyidaUser->name,
+                'username' => $rosyidaUser->username,
+                'role' => $rosyidaUser->role,
+                'nip' => $rosyidaUser->identifier,
+            ] : null,
+            'rosyida_homeroom' => $homeroomClass ? [
+                'id' => $homeroomClass->id,
+                'name' => $homeroomClass->name,
+            ] : null,
+            'rosyida_schedules' => $rosyidaScheds,
+            'class_schedules_count' => count($classScheds),
+            'active_cycle' => \App\Models\Setting::first()->active_cycle ?? null,
+            'carbon_now' => [
+                'day' => \Carbon\Carbon::now('Asia/Jakarta')->format('l'),
+                'date' => \Carbon\Carbon::now('Asia/Jakarta')->toDateString(),
+                'time' => \Carbon\Carbon::now('Asia/Jakarta')->toTimeString(),
+            ]
         ];
 
         return response()->json([
