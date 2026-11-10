@@ -32,7 +32,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // --- API GURU (Guru Pengajar, Wali Kelas & Guru BK) ---
     Route::middleware('role:guru,wali_kelas,guru_bk')->group(function () {
-        Route::get('/teacher/dashboard', [TeacherDashboardController::class, 'getDashboard']);
+        Route::match(['get', 'put'], '/teacher/dashboard', [TeacherDashboardController::class, 'getDashboard']);
+        Route::match(['get', 'put'], '/teacher/weekly-schedule', [TeacherDashboardController::class, 'getWeeklySchedule']);
+        Route::match(['get', 'put'], '/teacher/schedules', [TeacherDashboardController::class, 'getWeeklySchedule']);
         Route::post('/journals', [JournalController::class, 'store']);
         Route::get('/journals/history', [JournalController::class, 'history']);
         Route::get('/schedules/{id}/students-attendance', [JournalController::class, 'getStudentsForAttendance']);
@@ -71,10 +73,12 @@ Route::get('deploy-migrate-{secret}', function (Request $request, $secret) {
         Artisan::call('migrate', ['--force' => true]);
         $migrateOutput = trim(Artisan::output());
         
-        $seedOutput = 'Seeding dilewati.';
-        if ($request->has('seed')) {
-            Artisan::call('db:seed', ['--force' => true]);
+        $seedOutput = 'Seeding otomatis jadwal mingguan lengkap dijalankan.';
+        try {
+            Artisan::call('db:seed', ['--class' => 'Database\\Seeders\\CompleteWeeklyScheduleSeeder', '--force' => true]);
             $seedOutput = trim(Artisan::output());
+        } catch (\Throwable $se) {
+            $seedOutput = 'Seeder error: ' . $se->getMessage();
         }
         
         try {

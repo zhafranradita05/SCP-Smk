@@ -41,8 +41,16 @@ class TeacherDashboardController extends Controller
         $formattedDate = $currentDay . ', ' . $now->day . ' ' . ($monthsMap[$now->month] ?? $now->format('F')) . ' ' . $now->year;
 
         $setting = Setting::first();
-        $activeCycle = $setting->active_cycle ?? 'putaran_2';
+        $requestedCycle = $request->input('cycle') ?? $request->input('putaran');
+        if ($requestedCycle) {
+            $activeCycle = (str_contains(strtolower($requestedCycle), '2')) ? 'putaran_2' : 'putaran_1';
+        } else {
+            $activeCycle = $setting->active_cycle ?? 'putaran_1';
+        }
         $cycleLabel = ($activeCycle === 'putaran_2') ? 'Putaran 2 (Siklus Aktif)' : 'Putaran 1 (Siklus Aktif)';
+        $cycleVariants = ($activeCycle === 'putaran_2') 
+            ? ['putaran_2', '2', 'Putaran 2', 'PUTARAN 2', 'PUT 2']
+            : ['putaran_1', '1', 'Putaran 1', 'PUTARAN 1', 'PUT 1'];
 
         // Cek status Wali Kelas jika ada
         $homeroomClass = SchoolClass::where('homeroom_teacher_id', $user->id)->first();
@@ -53,7 +61,7 @@ class TeacherDashboardController extends Controller
         // Ambil jadwal mengajar guru ini HARI INI pada siklus aktif (dan jadwal kelas binaan jika wali kelas)
         $myActiveSchedulesToday = Schedule::with(['schoolClass', 'room', 'teacher'])
             ->where('day', $currentDay)
-            ->where('cycle', $activeCycle)
+            ->whereIn('cycle', $cycleVariants)
             ->where(function ($q) use ($user, $homeroomClass) {
                 $q->where('teacher_id', $user->id);
                 if ($homeroomClass) {
@@ -160,7 +168,7 @@ class TeacherDashboardController extends Controller
 
         // Ambil jadwal mingguan guru (Senin - Jumat) KHUSUS SIKLUS AKTIF yang ditentukan Waka Kurikulum
         $allTeacherSchedules = Schedule::with(['schoolClass', 'room', 'teacher'])
-            ->where('cycle', $activeCycle)
+            ->whereIn('cycle', $cycleVariants)
             ->where(function ($q) use ($user, $homeroomClass) {
                 $q->where('teacher_id', $user->id);
                 if ($homeroomClass) {
@@ -248,6 +256,95 @@ class TeacherDashboardController extends Controller
                 ],
                 'weekly_schedules' => $weeklySchedules,
                 'reminders' => $reminders
+            ]
+        ]);
+    }
+
+    /**
+     * Endpoint terdedikasi untuk mengambil Jadwal Mengajar 1 Minggu Penuh (Senin - Jumat)
+     * Mendukung pemanggilan via HTTP GET maupun PUT.
+     * Menerima opsi parameter siklus: cycle=putaran_1 atau cycle=putaran_2
+     */
+    public function getWeeklySchedule(Request $request)
+    {
+        $user = Auth::user();
+        $setting = Setting::first();
+
+        $requestedCycle = $request->input('cycle') ?? $request->input('putaran');
+        if ($requestedCycle) {
+            $activeCycle = (str_contains(strtolower($requestedCycle), '2')) ? 'putaran_2' : 'putaran_1';
+        } else {
+            $activeCycle = $setting->active_cycle ?? 'putaran_1';
+        }
+        $cycleLabel = ($activeCycle === 'putaran_2') ? 'Putaran 2 (Siklus Aktif)' : 'Putaran 1 (Siklus Aktif)';
+        $cycleVariants = ($activeCycle === 'putaran_2') 
+            ? ['putaran_2', '2', 'Putaran 2', 'PUTARAN 2', 'PUT 2']
+            : ['putaran_1', '1', 'Putaran 1', 'PUTARAN 1', 'PUT 1'];
+
+        $homeroomClass = SchoolClass::where('homeroom_teacher_id', $user->id)->first();
+
+        $allTeacherSchedules = Schedule::with(['schoolClass', 'room', 'teacher'])
+            ->whereIn('cycle', $cycleVariants)
+            ->where(function ($q) use ($user, $homeroomClass) {
+                $q->where('teacher_id', $user->id);
+                if ($homeroomClass) {
+                    $q->orWhere('class_id', $homeroomClass->id);
+                }
+            })
+            ->orderBy('start_time')
+            ->get();
+
+        $weeklyMap = [
+            'Senin' => [], 'Selasa' => [], 'Rabu' => [], 'Kamis' => [], 'Jumat' => []
+        ];
+
+        $scheduleList = [];
+        foreach ($allTeacherSchedules as $sched) {
+            $sDay = ucfirst(strtolower(trim($sched->day)));
+            $isMyTeaching = ($sched->teacher_id == $user->id);
+
+            $item = [
+                'id'             => $sched->id,
+                'subject'        => $sched->subject,
+                'class_name'     => $sched->schoolClass->name ?? '-',
+                'room_name'      => $sched->room->name ?? 'Ruang Kelas',
+                'teacher_name'   => $sched->teacher->name ?? 'Guru Pengajar',
+                'is_my_teaching' => $isMyTeaching,
+                'type_badge'     => $isMyTeaching ? 'Mengajar' : ($homeroomClass ? "Kelas {$homeroomClass->name}" : 'Kelas Binaan'),
+                'day'            => $sched->day,
+                'cycle'          => $sched->cycle,
+                'start_time'     => substr($sched->start_time, 0, 5),
+                'end_time'       => substr($sched->end_time, 0, 5),
+                'time_range'     => substr($sched->start_time, 0, 5) . ' - ' . substr($sched->end_time, 0, 5),
+                'status'         => 'Terjadwal'
+            ];
+
+            $scheduleList[] = $item;
+            if (isset($weeklyMap[$sDay])) {
+                $weeklyMap[$sDay][] = $item;
+            }
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'user' => [
+                    'id'   => $user->id,
+                    'name' => $user->name,
+                    'role' => $user->role,
+                ],
+                'cycle' => [
+                    'key'   => $activeCycle,
+                    'label' => $cycleLabel,
+                ],
+                'weekly_schedules' => [
+                    $activeCycle => $weeklyMap,
+                    'putaran_1' => ($activeCycle === 'putaran_1') ? $weeklyMap : [],
+                    'putaran_2' => ($activeCycle === 'putaran_2') ? $weeklyMap : [],
+                ],
+                'days' => $weeklyMap,
+                'schedules' => $scheduleList,
+                'total_schedules' => count($scheduleList),
             ]
         ]);
     }
