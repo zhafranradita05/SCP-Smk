@@ -108,40 +108,8 @@ class TeacherDashboardController extends Controller
             }
         }
 
-        // Ambil jadwal pada SIKLUS LAIN pada hari yang sama (sebagai fallback informatif bagi guru)
-        $otherCycle = ($activeCycle === 'putaran_1') ? 'putaran_2' : 'putaran_1';
-        $otherCycleLabel = ($otherCycle === 'putaran_2') ? 'Putaran 2' : 'Putaran 1';
-        $otherCycleSchedulesToday = Schedule::with(['schoolClass', 'room', 'teacher'])
-            ->where('day', $currentDay)
-            ->where('cycle', $otherCycle)
-            ->where(function ($q) use ($user, $homeroomClass) {
-                $q->where('teacher_id', $user->id);
-                if ($homeroomClass) {
-                    $q->orWhere('class_id', $homeroomClass->id);
-                }
-            })
-            ->orderBy('start_time')
-            ->get();
-
+        // Jadwal siklus lain dinonaktifkan: Guru hanya berhak melihat jadwal pada siklus aktif yang ditentukan Waka Kurikulum
         $otherCycleScheduleItems = [];
-        foreach ($otherCycleSchedulesToday as $sched) {
-            $isMyTeaching = ($sched->teacher_id == $user->id);
-            $otherCycleScheduleItems[] = [
-                'id'             => $sched->id,
-                'subject'        => $sched->subject,
-                'class_name'     => $sched->schoolClass->name ?? '-',
-                'room_name'      => $sched->room->name ?? 'Ruang Kelas',
-                'teacher_name'   => $sched->teacher->name ?? 'Guru Pengajar',
-                'is_my_teaching' => $isMyTeaching,
-                'type_badge'     => $isMyTeaching ? 'Mengajar' : ($homeroomClass ? "Kelas {$homeroomClass->name}" : 'Kelas Binaan'),
-                'day'            => $sched->day,
-                'cycle'          => $sched->cycle,
-                'start_time'     => substr($sched->start_time, 0, 5),
-                'end_time'       => substr($sched->end_time, 0, 5),
-                'time_range'     => substr($sched->start_time, 0, 5) . ' - ' . substr($sched->end_time, 0, 5),
-                'status'         => 'Terjadwal',
-            ];
-        }
 
         if ($hasScheduleToday) {
 
@@ -190,8 +158,9 @@ class TeacherDashboardController extends Controller
             $reminders = [];
         }
 
-        // Ambil seluruh jadwal mingguan guru (Senin - Jumat) untuk kedua siklus
+        // Ambil jadwal mingguan guru (Senin - Jumat) KHUSUS SIKLUS AKTIF yang ditentukan Waka Kurikulum
         $allTeacherSchedules = Schedule::with(['schoolClass', 'room', 'teacher'])
+            ->where('cycle', $activeCycle)
             ->where(function ($q) use ($user, $homeroomClass) {
                 $q->where('teacher_id', $user->id);
                 if ($homeroomClass) {
@@ -271,11 +240,11 @@ class TeacherDashboardController extends Controller
                 'schedules_today' => $scheduleItems,
                 'schedules' => $allTeacherSchedulesList,
                 'other_cycle' => [
-                    'key' => $otherCycle,
-                    'label' => $otherCycleLabel,
-                    'has_schedules' => !empty($otherCycleScheduleItems),
-                    'count' => count($otherCycleScheduleItems),
-                    'schedules_today' => $otherCycleScheduleItems,
+                    'key' => null,
+                    'label' => null,
+                    'has_schedules' => false,
+                    'count' => 0,
+                    'schedules_today' => [],
                 ],
                 'weekly_schedules' => $weeklySchedules,
                 'reminders' => $reminders
