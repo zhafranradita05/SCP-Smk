@@ -155,17 +155,21 @@ class ScheduleController extends Controller
         $cycleInput = $request->input('cycle', 'auto');
         $activeCycle = $setting->active_cycle ?? 'putaran_1';
 
-        if ($cycleInput === 'putaran_1' || $cycleInput === 'putaran_2') {
+        $origLower = strtolower($originalName);
+        $fileDetectedCycle = null;
+        if (preg_match('/(putaran|put|p)[\s\-_]*2(?![0-9])/i', $origLower)) {
+            $fileDetectedCycle = 'putaran_2';
+        } elseif (preg_match('/(putaran|put|p)[\s\-_]*1(?![0-9])/i', $origLower)) {
+            $fileDetectedCycle = 'putaran_1';
+        }
+
+        // Jika nama file jelas mencantumkan Putaran 1 atau Putaran 2 (contoh: JADWAL KELAS PUT 1.pdf), prioritaskan nama file
+        if ($fileDetectedCycle) {
+            $targetCycle = $fileDetectedCycle;
+        } elseif ($cycleInput === 'putaran_1' || $cycleInput === 'putaran_2') {
             $targetCycle = $cycleInput;
         } else {
-            $origLower = strtolower($originalName);
-            if (preg_match('/(putaran\s*2|p[\-_]?2|siklus\s*2|blok\s*2)/i', $origLower)) {
-                $targetCycle = 'putaran_2';
-            } elseif (preg_match('/(putaran\s*1|p[\-_]?1|siklus\s*1|blok\s*1)/i', $origLower)) {
-                $targetCycle = 'putaran_1';
-            } else {
-                $targetCycle = $activeCycle;
-            }
+            $targetCycle = $activeCycle;
         }
 
         // 1. Ekstraksi Baris Data secara Otomatis dari File 1 (Jadwal Guru)
@@ -940,9 +944,11 @@ class ScheduleController extends Controller
         ];
 
         // Helper cari Guru
-        $findTeacher = function($rawStr) use ($teacherList) {
+        $findTeacher = function($rawStr, $teacherCode = null) use ($teacherList) {
             $str = trim((string)$rawStr, " \t\n\r\0\x0B'\"“”");
-            // Bersihkan nomor urut FET (misal: "82. RAHMAWATI YOGA PAMUNGKAS, M.Pd" -> "RAHMAWATI YOGA PAMUNGKAS, M.Pd")
+            if (!$teacherCode && preg_match('/^([0-9]{1,3})[\.\s\-]+/', $str, $cm)) {
+                $teacherCode = $cm[1];
+            }
             $clean = preg_replace('/^[0-9]+[\.\s\-]+/', '', $str);
             $clean = trim($clean, " \t\n\r\0\x0B'\"“”");
             if (empty($clean) || strlen($clean) < 3) return null;
@@ -963,12 +969,30 @@ class ScheduleController extends Controller
                 if ($t) return $t;
             }
 
-            // 3. Substring match
+            // 3. Cocokkan kode nomor FET jika terdaftar di akun guru (identifier)
+            if ($teacherCode) {
+                $t = $teacherList->first(fn($u) => trim((string)$u->identifier) === (string)$teacherCode);
+                if ($t) return $t;
+            }
+
+            // 4. Substring match
             $t = $teacherList->first(function($u) use ($clean) {
                 return str_contains(strtolower($u->name), strtolower($clean)) || str_contains(strtolower($clean), strtolower($u->name));
             });
+            if ($t) return $t;
 
-            return $t;
+            // 5. Token match (kesamaan kata kunci nama tanpa gelar, misal Anastya vs Anastasia)
+            $tokens = array_filter(explode(' ', preg_replace('/[^a-z]/', ' ', strtolower($clean))));
+            if (count($tokens) >= 2) {
+                $t = $teacherList->first(function($u) use ($tokens) {
+                    $uTokens = array_filter(explode(' ', preg_replace('/[^a-z]/', ' ', strtolower($u->name))));
+                    $common = array_intersect($tokens, $uTokens);
+                    return count($common) >= 2;
+                });
+                if ($t) return $t;
+            }
+
+            return null;
         };
 
         // Helper cari Kelas
@@ -1068,53 +1092,122 @@ class ScheduleController extends Controller
 
         // Helper parse isi sel jadwal FET (Jadwal Per Kelas: sel berisi Guru, Mapel, Ruang)
         $parseClassCell = function($cellText) use ($findTeacher) {
-            $lines = array_values(array_filter(array_map('trim', preg_split('/[\r\n]+|<br\s*\/?>/i', (string)$cellText))));
+            $raw = trim((string)$cellText);
+            if ($raw === '' || $raw === '---' || $raw === '-' || $raw === '-x-') {
+                return null;
+            }
+
+            $lines = array_values(array_filter(array_map('trim', preg_split('/[\r\n]+|<br\s*\/?>/i', $raw))));
+            if (empty($lines)) return null;
+
+            $roomPattern = '/^(?:LAB|LK|LABORATORIUM|L\.?)\s*[0-9]{1,2}$|^(?:RUANG|R\.?|R\-)[\s\-_]*[0-9]{1,2}$|^(?:OR|OR\s*[0-9]+|LAPANGAN|LAPANGAN\s*OLAHRAGA)$|^(?:HALL|SENI|MENARI)$|^(?:LABIPA|IPA|LAB\s*IPA|L\.?\s*IPA)$|^(?:PB|LAB\s*PB|PENATAAN\s*BARANG|L\.?\s*PB)$/i';
+            $trailingRoomPattern = '/\b(LAB\s*\d+|LK\s*\d+|L\.?\s*\d+|LAB\s*IPA|L\.?\s*IPA|LAB\s*PB|L\.?\s*PB|OR\s*\d*|RUANG\s*\d+|R\s*\d+)$/i';
+
             $teacher = null;
+            $teacherStr = null;
+            $teacherCode = null;
             $room = null;
             $subjectParts = [];
 
-            foreach ($lines as $line) {
-                $line = trim($line, " \t\n\r\0\x0B");
-                if (empty($line) || $line === '---' || $line === '-' || $line === '-x-') continue;
+            // Gabungkan baris bertingkat di dalam tanda kutip (misal "34.DWI \n LESMIYATI, S.Pd.")
+            $mergedLines = [];
+            $inQuote = false;
+            $quoteBuf = '';
 
-                // 1. Cek Ruang (Mendukung angka langsung 1..34, LAB1..22, OR, HALL, IPA, PB, dll)
+            foreach ($lines as $line) {
+                $hasLeadingQuote = str_starts_with($line, '"') || preg_match('/^"[0-9]+[\.\s\-]/', $line);
+                $hasTrailingQuote = str_ends_with($line, '"');
+
+                if (!$inQuote) {
+                    if ($hasLeadingQuote && !$hasTrailingQuote) {
+                        $inQuote = true;
+                        $quoteBuf = $line;
+                    } else {
+                        $mergedLines[] = $line;
+                    }
+                } else {
+                    $quoteBuf .= ' ' . $line;
+                    if ($hasTrailingQuote || str_contains($line, '"')) {
+                        $inQuote = false;
+                        $mergedLines[] = trim($quoteBuf);
+                        $quoteBuf = '';
+                    }
+                }
+            }
+            if ($inQuote && !empty($quoteBuf)) {
+                $mergedLines[] = trim($quoteBuf);
+            }
+
+            foreach ($mergedLines as $line) {
+                $cleanLine = trim($line, " \t\n\r\0\x0B");
+                if ($cleanLine === '' || $cleanLine === '---' || $cleanLine === '-' || $cleanLine === '-x-') continue;
+
+                // 1. Cek Ruang mandiri (Mendukung angka langsung 1..34, LAB1..22, OR, HALL, IPA, PB, dll)
                 if (!$room && (
-                    (is_numeric($line) && (int)$line >= 1 && (int)$line <= 34) ||
-                    preg_match('/^(?:LAB|LK|LABORATORIUM|L\.?)\s*[0-9]{1,2}$|^(?:RUANG|R\.?|R\-)[\s\-_]*[0-9]{1,2}$|^(?:OR|OR\s*[0-9]+|LAPANGAN|LAPANGAN\s*OLAHRAGA)$|^(?:HALL|SENI|MENARI)$|^(?:LABIPA|IPA|LAB\s*IPA|L\.?\s*IPA)$|^(?:PB|LAB\s*PB|PENATAAN\s*BARANG|L\.?\s*PB)$/i', $line)
+                    (is_numeric($cleanLine) && (int)$cleanLine >= 1 && (int)$cleanLine <= 34) ||
+                    preg_match($roomPattern, $cleanLine)
                 )) {
-                    $room = trim($line);
+                    $room = $cleanLine;
                     continue;
                 }
 
-                // 2. Cek Guru
+                // 2. Cek apakah ini baris Guru:
+                // Sesuai format FET Timetable:
+                // - Diberi tanda kutip " (seperti "82. RAHMAWATI YOGA PAMUNGKAS, M.Pd")
+                // - Diawali kode nomor guru FET (seperti 57.RUSDIYANTO, S.Pd)
+                // - Atau memuat gelar guru resmi
+                $isTeacherLine = false;
                 if (!$teacher) {
-                    $t = $findTeacher($line);
-                    if ($t) {
-                        $teacher = $t;
-                        continue;
+                    if (str_starts_with($cleanLine, '"') || str_ends_with($cleanLine, '"')) {
+                        $isTeacherLine = true;
+                    } elseif (preg_match('/^[0-9]{1,3}\s*[\.\-]\s*[A-Za-z]/', $cleanLine)) {
+                        $isTeacherLine = true;
+                    } elseif (preg_match('/\b(S\.Pd|M\.Pd|S\.T|S\.Kom|M\.Kom|S\.Sos|S\.Pd\.I|S\.Pd\.Si|SS|M\.Ds|S\.IP)\b/i', $cleanLine)) {
+                        $isTeacherLine = true;
                     }
                 }
 
-                $subjectParts[] = $line;
+                if ($isTeacherLine) {
+                    // Deteksi jika ada kode ruangan di ujung baris guru (misal: 57.RUSDIY ANT O, S.Pd LAB 16)
+                    if (preg_match($trailingRoomPattern, $cleanLine, $tRoom)) {
+                        if (!$room) {
+                            $room = trim($tRoom[1]);
+                        }
+                        $cleanLine = trim(substr($cleanLine, 0, -strlen($tRoom[0])));
+                    }
+
+                    if (preg_match('/^"?([0-9]{1,3})[\.\s\-]+/', $cleanLine, $cm)) {
+                        $teacherCode = $cm[1];
+                    }
+
+                    $cleanLine = trim($cleanLine, " \t\n\r\0\x0B'\"“”");
+                    $cleanLine = preg_replace('/^[0-9]+[\.\s\-]+/', '', $cleanLine);
+                    $cleanLine = trim($cleanLine, " \t\n\r\0\x0B'\"“”");
+
+                    // Defragment spasi pada nama guru hasil ekstraksi PDF
+                    $cleanLine = preg_replace_callback('/\b([A-Z]{2,})\s+([A-Z])\s+([A-Z]{1,2})\b/u', fn($m) => $m[1].$m[2].$m[3], $cleanLine);
+                    $cleanLine = preg_replace_callback('/\b([A-Z]{2,})\s+([A-Z]{1,2})\b/u', fn($m) => $m[1].$m[2], $cleanLine);
+
+                    $teacherStr = $cleanLine;
+                    $teacher = $findTeacher($cleanLine, $teacherCode);
+                    continue;
+                }
+
+                // 3. Jika bukan ruang dan bukan guru, maka ini baris Mata Pelajaran
+                $subjectParts[] = $cleanLine;
             }
 
-            // Fallback: Jika guru belum ditemukan, coba gabungkan 2 baris berdekatan
-            if (!$teacher && count($subjectParts) >= 2) {
-                for ($k = 0; $k < count($subjectParts) - 1; $k++) {
-                    $combined = $subjectParts[$k] . ' ' . $subjectParts[$k + 1];
-                    $t = $findTeacher($combined);
-                    if ($t) {
-                        $teacher = $t;
-                        array_splice($subjectParts, $k, 2);
-                        break;
-                    }
-                }
+            // Jika guru belum ditemukan tapi ada string calon guru, coba findTeacher lagi
+            if (!$teacher && $teacherStr) {
+                $teacher = $findTeacher($teacherStr, $teacherCode);
             }
 
             return [
-                'teacher' => $teacher,
-                'room'    => $room,
-                'subject' => implode(' ', $subjectParts),
+                'teacher'      => $teacher,
+                'teacher_name' => $teacherStr,
+                'teacher_code' => $teacherCode,
+                'room'         => $room,
+                'subject'      => implode(' ', $subjectParts),
             ];
         };
 
@@ -1278,7 +1371,7 @@ class ScheduleController extends Controller
                     $time = $times[$i];
                     $cellVal = $daySlots[$time] ?? '';
 
-                    if (empty($cellVal) || $cellVal === '---' || $cellVal === '-') {
+                    if (empty($cellVal) || $cellVal === '---' || $cellVal === '-' || $cellVal === '-x-') {
                         continue;
                     }
 
@@ -1294,6 +1387,9 @@ class ScheduleController extends Controller
                         $classId = $entity['entity'];
                         $className = $entity['name'];
                         $parsed = $parseClassCell($cellVal);
+                        if (!$parsed) {
+                            continue; // Sel kosong / jam selesai mengajar (Jumat siang)
+                        }
                         $teacher = $parsed['teacher'];
                         $subject = $parsed['subject'] ?: 'Mata Pelajaran';
                         $cellRoom = $parsed['room'];
@@ -1302,9 +1398,54 @@ class ScheduleController extends Controller
                     if (!$teacher || !$classId) {
                         continue;
                     }
-                    
+
+                    $startTime = $time . ':00';
+                    $lastSlot = $time;
+
+                    // Gabungkan slot jam berurutan yang mengajar kelas & mapel yang sama (Blok Pelajaran)
+                    // HANYA jika slot berikutnya memiliki guru dan mapel yang sama.
+                    // Sel kosong atau '-x-' menandakan pelajaran selesai (misal Jumat selesai jam 14.00), JANGAN digabung!
+                    while ($i + 1 < $slotCount) {
+                        $nextTime = $times[$i + 1];
+                        $nextVal = $daySlots[$nextTime] ?? '';
+
+                        if (empty($nextVal) || $nextVal === '-x-' || $nextVal === '-' || $nextVal === '---') {
+                            break;
+                        }
+
+                        if ($entity['type'] === 'teacher') {
+                            $nextParsed = $parseCell($nextVal);
+                            if ($nextParsed && $nextParsed['class'] === $parsed['class'] && strtolower(trim($nextParsed['subject'])) === strtolower(trim($subject))) {
+                                if (!$cellRoom && !empty($nextParsed['room'])) {
+                                    $cellRoom = $nextParsed['room'];
+                                }
+                                $lastSlot = $nextTime;
+                                $i++;
+                            } else {
+                                break;
+                            }
+                        } else {
+                            $nextParsed = $parseClassCell($nextVal);
+                            if ($nextParsed &&
+                                (($nextParsed['teacher'] && $teacher && $nextParsed['teacher']->id === $teacher->id) ||
+                                 ($nextParsed['teacher_name'] && $nextParsed['teacher_name'] === ($parsed['teacher_name'] ?? ''))) &&
+                                strtolower(trim($nextParsed['subject'])) === strtolower(trim($subject))
+                            ) {
+                                if (!$cellRoom && !empty($nextParsed['room'])) {
+                                    $cellRoom = $nextParsed['room'];
+                                }
+                                $lastSlot = $nextTime;
+                                $i++;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+
+                    $endTime = ($slotEndsMap[$lastSlot] ?? \Carbon\Carbon::parse($lastSlot)->addMinutes(45)->format('H:i')) . ':00';
+
                     // Resolusi Ruangan:
-                    // 1. Cek ruang eksplisit di file/sel (contoh LAB 6, OR1)
+                    // 1. Cek ruang eksplisit di file/sel (contoh LAB 16, OR1, Ruang 12)
                     $roomId = null;
                     if (!empty($cellRoom)) {
                         $roomId = $findRoom($cellRoom);
@@ -1351,7 +1492,7 @@ class ScheduleController extends Controller
                         }
                     }
 
-                    // 3. Jika tetap belum ada ruangan, fallback ke Ruang Teori Kanonikal 1..34 sesuai Kelas (tanpa membuat room baru)
+                    // 3. Jika tetap belum ada ruangan, fallback ke Ruang Teori Kanonikal 1..34 sesuai Kelas
                     if (!$roomId && $classId) {
                         $targetRoomNum = (($classId - 1) % 34) + 1;
                         $defaultRoom = $rooms->first(function($r) use ($targetRoomNum) {
@@ -1366,25 +1507,6 @@ class ScheduleController extends Controller
                     if (!$roomId) {
                         continue;
                     }
-
-                    $startTime = $time . ':00';
-                    $lastSlot = $time;
-
-                    // Gabungkan slot jam berurutan yang mengajar kelas & mapel yang sama (Blok Pelajaran)
-                    while ($i + 1 < $slotCount) {
-                        $nextTime = $times[$i + 1];
-                        $nextVal = $daySlots[$nextTime] ?? '';
-
-                        // Di format FET/Excel, sel yang di-merge bisa berupa string kosong atau teks yang sama
-                        if ($nextVal === '' || $nextVal === $cellVal) {
-                            $lastSlot = $nextTime;
-                            $i++;
-                        } else {
-                            break;
-                        }
-                    }
-
-                    $endTime = ($slotEndsMap[$lastSlot] ?? \Carbon\Carbon::parse($lastSlot)->addMinutes(45)->format('H:i')) . ':00';
 
                     // Algoritma Anti-Tabrakan Otomatis berdasarkan target siklus
                     $conflict = Schedule::where('day', $day)

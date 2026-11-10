@@ -1232,9 +1232,9 @@ class UserController extends Controller
         $str = str_replace([',', '.', '-', '_', '\'', '"', '`'], ' ', $str);
         // 4. Hapus gelar umum pendidikan & keagamaan di Indonesia
         $titles = [
-            's pd i', 'm pd i', 's pd', 'm pd', 's t', 'm t', 's kom', 'm kom', 
-            's ag', 'm ag', 's si', 'm si', 's e', 'm m', 's sos', 'm sos',
-            's psy', 'm psy', 'dra', 'drs', 'dr', 'prof', 'gr', 'h', 'hj'
+            's pd si', 's pd i', 'm pd i', 's pd', 'm pd', 's ip', 'm ip', 's t', 'm t', 's kom', 'm kom', 
+            's ag', 'm ag', 's si', 'm si', 's e', 'm m', 's sos', 'm sos', 's ds', 'm ds',
+            's s', 'ss', 's psy', 'm psy', 'dra', 'drs', 'dr', 'prof', 'gr', 'h', 'hj'
         ];
         foreach ($titles as $title) {
             $str = preg_replace('/\b' . preg_quote($title, '/') . '\b/i', ' ', $str);
