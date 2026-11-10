@@ -65,10 +65,11 @@ class LeaveRequestController extends Controller
         // Ambil data izin pending beserta data siswa dan kelasnya
         $query = LeaveRequest::with(['student.schoolClass'])->where('status', 'pending');
 
-        // Jika login sebagai WALI KELAS: Hanya ambil izin murid di kelas binaannya saja
-        if ($user->role === 'wali_kelas') {
-            $homeroomClass = \App\Models\SchoolClass::where('homeroom_teacher_id', $user->id)->first();
-            
+        // Cari kelas binaan (jika ada)
+        $homeroomClass = \App\Models\SchoolClass::where('homeroom_teacher_id', $user->id)->first();
+
+        // Jika login sebagai WALI KELAS atau memiliki kelas binaan: Hanya ambil izin murid di kelas binaannya saja
+        if ($user->role === 'wali_kelas' || $homeroomClass) {
             if (!$homeroomClass) {
                 return response()->json(['status' => 'success', 'data' => []]);
             }
@@ -99,8 +100,11 @@ class LeaveRequestController extends Controller
     {
         $user = Auth::user();
 
+        // Cari kelas yang dibina wali kelas ini
+        $homeroomClass = \App\Models\SchoolClass::where('homeroom_teacher_id', $user->id)->first();
+
         // Aturan: Hanya Wali Kelas yang memiliki hak akses untuk menyetujui / menolak izin
-        if ($user->role !== 'wali_kelas') {
+        if ($user->role !== 'wali_kelas' && !$homeroomClass) {
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Hanya Wali Kelas yang berhak menyetujui izin siswa. Guru BK hanya bertugas merekap dan memantau kehadiran.'
@@ -113,8 +117,6 @@ class LeaveRequestController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Data tidak ditemukan!'], 404);
         }
 
-        // Cari kelas yang dibina wali kelas ini
-        $homeroomClass = \App\Models\SchoolClass::where('homeroom_teacher_id', $user->id)->first();
         if (!$homeroomClass || !$leave->student || $leave->student->class_id !== $homeroomClass->id) {
             $namaKelasBinaan = $homeroomClass ? $homeroomClass->name : 'Tidak ada kelas binaan';
             return response()->json([

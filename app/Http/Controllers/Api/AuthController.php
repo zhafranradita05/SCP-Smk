@@ -256,6 +256,15 @@ class AuthController extends Controller
             ], 403);
         }
 
+        // Sinkronisasi dinamis: Jika guru ini ditugaskan sebagai Wali Kelas, pastikan role adalah 'wali_kelas'
+        if ($user->role === 'guru') {
+            $isHomeroom = \App\Models\SchoolClass::where('homeroom_teacher_id', $user->id)->exists();
+            if ($isHomeroom) {
+                $user->update(['role' => 'wali_kelas']);
+                $user->role = 'wali_kelas';
+            }
+        }
+
         // Muat relasi kelas siswa/guru/orang_tua
         if ($user->role === 'orang_tua') {
             $user->load(['student.schoolClass', 'schoolClass']);

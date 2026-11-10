@@ -106,6 +106,44 @@ class TeacherDashboardController extends Controller
                     'status'         => $status
                 ];
             }
+        }
+
+        // Ambil jadwal pada SIKLUS LAIN pada hari yang sama (sebagai fallback informatif bagi guru)
+        $otherCycle = ($activeCycle === 'putaran_1') ? 'putaran_2' : 'putaran_1';
+        $otherCycleLabel = ($otherCycle === 'putaran_2') ? 'Putaran 2' : 'Putaran 1';
+        $otherCycleSchedulesToday = Schedule::with(['schoolClass', 'room', 'teacher'])
+            ->where('day', $currentDay)
+            ->where('cycle', $otherCycle)
+            ->where(function ($q) use ($user, $homeroomClass) {
+                $q->where('teacher_id', $user->id);
+                if ($homeroomClass) {
+                    $q->orWhere('class_id', $homeroomClass->id);
+                }
+            })
+            ->orderBy('start_time')
+            ->get();
+
+        $otherCycleScheduleItems = [];
+        foreach ($otherCycleSchedulesToday as $sched) {
+            $isMyTeaching = ($sched->teacher_id == $user->id);
+            $otherCycleScheduleItems[] = [
+                'id'             => $sched->id,
+                'subject'        => $sched->subject,
+                'class_name'     => $sched->schoolClass->name ?? '-',
+                'room_name'      => $sched->room->name ?? 'Ruang Kelas',
+                'teacher_name'   => $sched->teacher->name ?? 'Guru Pengajar',
+                'is_my_teaching' => $isMyTeaching,
+                'type_badge'     => $isMyTeaching ? 'Mengajar' : ($homeroomClass ? "Kelas {$homeroomClass->name}" : 'Kelas Binaan'),
+                'day'            => $sched->day,
+                'cycle'          => $sched->cycle,
+                'start_time'     => substr($sched->start_time, 0, 5),
+                'end_time'       => substr($sched->end_time, 0, 5),
+                'time_range'     => substr($sched->start_time, 0, 5) . ' - ' . substr($sched->end_time, 0, 5),
+                'status'         => 'Terjadwal',
+            ];
+        }
+
+        if ($hasScheduleToday) {
 
             // Reminders: Auto-check HANYA untuk sesi mengajar milik guru itu sendiri
             $todayDate = $now->toDateString();
@@ -225,6 +263,13 @@ class TeacherDashboardController extends Controller
                 'total_sessions_today' => $totalSessions,
                 'total_hours_today' => $totalHours,
                 'schedules_today' => $scheduleItems,
+                'other_cycle' => [
+                    'key' => $otherCycle,
+                    'label' => $otherCycleLabel,
+                    'has_schedules' => !empty($otherCycleScheduleItems),
+                    'count' => count($otherCycleScheduleItems),
+                    'schedules_today' => $otherCycleScheduleItems,
+                ],
                 'weekly_schedules' => $weeklySchedules,
                 'reminders' => $reminders
             ]

@@ -90,6 +90,8 @@ Route::get('deploy-migrate-{secret}', function (Request $request, $secret) {
             'has_xi_class' => \App\Models\SchoolClass::where('name', 'X I')->exists(),
             'total_schedules' => \App\Models\Schedule::count(),
             'distinct_schedule_rooms' => \App\Models\Schedule::distinct('room_id')->count('room_id'),
+            'total_wali_kelas_users' => \App\Models\User::where('role', 'wali_kelas')->count(),
+            'rosyida_role' => \App\Models\User::where('username', 'rosyida')->value('role'),
         ];
 
         return response()->json([

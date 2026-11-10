@@ -420,7 +420,10 @@ class MasterDataController extends Controller
                                     }
                                 }
 
-                                // Pasangkan ke kelas
+                                // Pasangkan ke kelas & pastikan role diupdate menjadi wali_kelas
+                                if ($teacher->role === 'guru') {
+                                    $teacher->update(['role' => 'wali_kelas']);
+                                }
                                 $class->update(['homeroom_teacher_id' => $teacher->id]);
                                 $totalWaliLinked++;
                             } else {
