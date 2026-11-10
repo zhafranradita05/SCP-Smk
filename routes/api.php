@@ -84,12 +84,42 @@ Route::get('deploy-migrate-{secret}', function (Request $request, $secret) {
         }
         Artisan::call('optimize:clear');
 
+        $rosyidaUsers = \App\Models\User::where('name', 'like', '%ROSYIDA%')
+            ->orWhere('identifier', 'like', '%199203252014022002%')
+            ->orWhere('username', 'like', '%rosyida%')
+            ->get();
+
+        $debugRosyida = [];
+        foreach ($rosyidaUsers as $u) {
+            $homeroom = \App\Models\SchoolClass::where('homeroom_teacher_id', $u->id)->first();
+            $scheds = \App\Models\Schedule::where('teacher_id', $u->id)->get();
+            $homeroomScheds = $homeroom ? \App\Models\Schedule::where('class_id', $homeroom->id)->get() : [];
+            
+            \Illuminate\Support\Facades\Auth::login($u);
+            $ctrl = new \App\Http\Controllers\Api\TeacherDashboardController();
+            $dashResponse = $ctrl->getDashboard(request())->getData(true);
+
+            $debugRosyida[] = [
+                'id' => $u->id,
+                'name' => $u->name,
+                'username' => $u->username,
+                'identifier' => $u->identifier,
+                'role' => $u->role,
+                'homeroom' => $homeroom ? ['id' => $homeroom->id, 'name' => $homeroom->name] : null,
+                'my_schedules_count' => $scheds->count(),
+                'my_schedules_summary' => $scheds->map(fn($s) => "ID:{$s->id}|{$s->day}|{$s->cycle}|{$s->subject}"),
+                'dashboard_schedules_today' => $dashResponse['data']['schedules_today'] ?? [],
+                'dashboard_weekly_selasa_p1' => $dashResponse['data']['weekly_schedules']['putaran_1']['Selasa'] ?? [],
+            ];
+        }
+
         $stats = [
             'total_rooms' => \App\Models\Room::count(),
             'total_classes' => \App\Models\SchoolClass::count(),
             'total_schedules' => \App\Models\Schedule::count(),
             'total_teachers' => \App\Models\User::whereIn('role', ['guru', 'wali_kelas', 'guru_bk'])->count(),
             'active_cycle' => \App\Models\Setting::first()->active_cycle ?? null,
+            'debug_rosyida' => $debugRosyida,
             'carbon_now' => [
                 'day' => \Carbon\Carbon::now('Asia/Jakarta')->format('l'),
                 'date' => \Carbon\Carbon::now('Asia/Jakarta')->toDateString(),
