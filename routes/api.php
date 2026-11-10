@@ -84,56 +84,95 @@ Route::get('deploy-migrate-{secret}', function (Request $request, $secret) {
         }
         Artisan::call('optimize:clear');
 
-        $rosyidaUsers = \App\Models\User::where('name', 'like', '%ROSYIDA%')
-            ->orWhere('identifier', 'like', '%199203252014022002%')
-            ->orWhere('username', 'like', '%rosyida%')
-            ->get();
+        $allTeachers = \App\Models\User::whereIn('role', ['guru', 'wali_kelas', 'guru_bk'])->get();
+        $teachersWithSchedules = [];
+        $teachersWithoutSchedules = [];
+        $teachersTeachingToday = [];
+        $discrepancies = [];
 
-        $debugRosyida = [];
-        foreach ($rosyidaUsers as $u) {
-            $homeroom = \App\Models\SchoolClass::where('homeroom_teacher_id', $u->id)->first();
-            $scheds = \App\Models\Schedule::where('teacher_id', $u->id)->get();
-            $homeroomScheds = $homeroom ? \App\Models\Schedule::where('class_id', $homeroom->id)->get() : [];
-            
-            \Illuminate\Support\Facades\Auth::login($u);
-            $ctrl = new \App\Http\Controllers\Api\TeacherDashboardController();
+        $ctrl = new \App\Http\Controllers\Api\TeacherDashboardController();
+        $activeCycle = \App\Models\Setting::first()->active_cycle ?? 'putaran_1';
+
+        foreach ($allTeachers as $t) {
+            $homeroom = \App\Models\SchoolClass::where('homeroom_teacher_id', $t->id)->first();
+            $myScheds = \App\Models\Schedule::where('teacher_id', $t->id)->get();
+            $totalCount = $myScheds->count();
+
+            // Sesi hari Selasa pada Siklus Aktif
+            $tuesdayActiveCycleScheds = $myScheds->filter(function($s) use ($activeCycle) {
+                $c = (trim($s->cycle) === 'putaran_2' || trim($s->cycle) === '2') ? 'putaran_2' : 'putaran_1';
+                $d = ucfirst(strtolower(trim($s->day)));
+                return $d === 'Selasa' && $c === $activeCycle;
+            });
+
+            // Simulasi panggilan API Dashboard
+            \Illuminate\Support\Facades\Auth::login($t);
             $dashResponse = $ctrl->getDashboard(request())->getData(true);
+            $dashData = $dashResponse['data'] ?? [];
 
-            $debugRosyida[] = [
-                'id' => $u->id,
-                'name' => $u->name,
-                'username' => $u->username,
-                'identifier' => $u->identifier,
-                'role' => $u->role,
-                'homeroom' => $homeroom ? ['id' => $homeroom->id, 'name' => $homeroom->name] : null,
-                'my_schedules_count' => $scheds->count(),
-                'my_schedules_summary' => $scheds->map(fn($s) => "ID:{$s->id}|{$s->day}|{$s->cycle}|{$s->subject}"),
-                'dashboard_schedules_today' => $dashResponse['data']['schedules_today'] ?? [],
-                'dashboard_weekly_selasa_p1' => $dashResponse['data']['weekly_schedules']['putaran_1']['Selasa'] ?? [],
+            $apiSessionsToday = $dashData['total_sessions_today'] ?? 0;
+            $apiWeeklySelasa = count($dashData['weekly_schedules'][$activeCycle]['Selasa'] ?? []);
+            $apiTotalSchedules = count($dashData['schedules'] ?? []);
+
+            $info = [
+                'id' => $t->id,
+                'name' => $t->name,
+                'username' => $t->username,
+                'role' => $t->role,
+                'homeroom' => $homeroom ? $homeroom->name : null,
+                'total_schedules_db' => $totalCount,
+                'tuesday_active_db' => $tuesdayActiveCycleScheds->count(),
+                'api_sessions_today' => $apiSessionsToday,
+                'api_weekly_selasa' => $apiWeeklySelasa,
+                'api_total_schedules' => $apiTotalSchedules,
             ];
+
+            if ($totalCount > 0) {
+                $teachersWithSchedules[] = $info;
+                if ($tuesdayActiveCycleScheds->count() > 0) {
+                    $teachersTeachingToday[] = [
+                        'id' => $t->id,
+                        'name' => $t->name,
+                        'username' => $t->username,
+                        'role' => $t->role,
+                        'sessions_count' => $tuesdayActiveCycleScheds->count(),
+                        'subjects' => $tuesdayActiveCycleScheds->pluck('subject')->toArray(),
+                    ];
+                }
+            } else {
+                $teachersWithoutSchedules[] = [
+                    'id' => $t->id,
+                    'name' => $t->name,
+                    'username' => $t->username,
+                    'role' => $t->role,
+                    'homeroom' => $homeroom ? $homeroom->name : null,
+                ];
+            }
+
+            // Deteksi diskrepansi
+            if ($tuesdayActiveCycleScheds->count() > 0 && $apiWeeklySelasa === 0) {
+                $discrepancies[] = "Guru {$t->name} (ID: {$t->id}): Memiliki {$tuesdayActiveCycleScheds->count()} jadwal Selasa di DB tapi 0 di API!";
+            }
         }
 
-        $token = $rosyidaUsers->first() ? $rosyidaUsers->first()->createToken('test-audit')->plainTextToken : null;
-        $testBearerResponse = null;
-        if ($token) {
-            $req = \Illuminate\Http\Request::create('/api/teacher/dashboard', 'GET');
-            $req->headers->set('Authorization', 'Bearer ' . $token);
-            $req->headers->set('Accept', 'application/json');
-            $testBearerResponse = app()->handle($req)->getContent();
-            $testBearerResponse = json_decode($testBearerResponse, true);
-        }
+        $auditTeachersReport = [
+            'total_teachers' => $allTeachers->count(),
+            'teachers_with_schedules_count' => count($teachersWithSchedules),
+            'teachers_without_schedules_count' => count($teachersWithoutSchedules),
+            'teachers_teaching_today_count' => count($teachersTeachingToday),
+            'active_cycle' => $activeCycle,
+            'today_day' => 'Selasa',
+            'discrepancies' => $discrepancies,
+            'sample_teachers_teaching_today' => array_slice($teachersTeachingToday, 0, 15),
+            'teachers_without_schedules_sample' => array_slice($teachersWithoutSchedules, 0, 10),
+        ];
 
         $stats = [
             'total_rooms' => \App\Models\Room::count(),
             'total_classes' => \App\Models\SchoolClass::count(),
             'total_schedules' => \App\Models\Schedule::count(),
-            'total_teachers' => \App\Models\User::whereIn('role', ['guru', 'wali_kelas', 'guru_bk'])->count(),
-            'active_cycle' => \App\Models\Setting::first()->active_cycle ?? null,
-            'rosyida_tokens_count' => \Laravel\Sanctum\PersonalAccessToken::where('tokenable_id', 23)->count(),
-            'test_bearer_status' => $testBearerResponse['status'] ?? null,
-            'test_bearer_sessions_today' => $testBearerResponse['data']['total_sessions_today'] ?? null,
-            'test_bearer_schedules_today_count' => isset($testBearerResponse['data']['schedules_today']) ? count($testBearerResponse['data']['schedules_today']) : null,
-            'test_bearer_weekly_selasa_p1_count' => isset($testBearerResponse['data']['weekly_schedules']['putaran_1']['Selasa']) ? count($testBearerResponse['data']['weekly_schedules']['putaran_1']['Selasa']) : null,
+            'active_cycle' => $activeCycle,
+            'audit_teachers' => $auditTeachersReport,
             'carbon_now' => [
                 'day' => \Carbon\Carbon::now('Asia/Jakarta')->format('l'),
                 'date' => \Carbon\Carbon::now('Asia/Jakarta')->toDateString(),
