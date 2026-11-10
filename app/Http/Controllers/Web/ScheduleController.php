@@ -2189,4 +2189,35 @@ class ScheduleController extends Controller
 
         return back()->with('success', 'Jadwal berhasil dihapus!');
     }
+
+    /**
+     * Hapus Semua Jadwal untuk Keperluan Simulasi & Reset Pengujian
+     */
+    public function destroyAll(Request $request)
+    {
+        $setting = Setting::first();
+        if ($setting && $setting->is_schedule_locked) {
+            return back()->with('error', 'Gagal! Jadwal sedang di-KUNCI (Lock Schedule aktif). Buka kunci jadwal terlebih dahulu.');
+        }
+
+        try {
+            $deletedCount = Schedule::count();
+
+            \Illuminate\Support\Facades\DB::transaction(function () {
+                \Illuminate\Support\Facades\Schema::disableForeignKeyConstraints();
+
+                // Bersihkan data dependensi jurnal, absensi, dan pengingat yang terkait jadwal simulasi
+                \App\Models\Attendance::truncate();
+                \App\Models\Journal::truncate();
+                \App\Models\Reminder::truncate();
+                Schedule::truncate();
+
+                \Illuminate\Support\Facades\Schema::enableForeignKeyConstraints();
+            });
+
+            return back()->with('success', "Berhasil! Seluruh data jadwal KBM ({$deletedCount} jadwal) dan catatan jurnal simulasi berhasil dikosongkan.");
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Terjadi kesalahan saat menghapus seluruh jadwal: ' . $e->getMessage());
+        }
+    }
 }

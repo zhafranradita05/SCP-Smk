@@ -4,10 +4,16 @@
 
 @section('header_actions')
     @if(!$setting->is_schedule_locked)
-        <button type="button" onclick="openImportScheduleModal()" class="inline-flex items-center px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold rounded-lg shadow-xs transition space-x-2" title="Import jadwal dari file PDF, Excel, CSV, atau JSON">
-            <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-            <span>Import Jadwal (Multi-File)</span>
-        </button>
+        <div class="flex items-center gap-2">
+            <button type="button" onclick="openImportScheduleModal()" class="inline-flex items-center px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold rounded-lg shadow-xs transition space-x-2" title="Import jadwal dari file PDF, Excel, CSV, atau JSON">
+                <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                <span>Import Jadwal (Multi-File)</span>
+            </button>
+            <button type="button" onclick="openDestroyAllModal()" class="inline-flex items-center px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-lg shadow-xs transition space-x-2" title="Kosongkan seluruh data jadwal untuk keperluan simulasi">
+                <svg class="w-4 h-4 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                <span>Hapus Semua Jadwal</span>
+            </button>
+        </div>
     @else
         <span class="inline-flex items-center px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg border border-slate-200">
             🔒 Jadwal Terkunci
@@ -296,6 +302,10 @@
                     <button type="button" onclick="openImportScheduleModal()" class="inline-flex items-center px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold rounded-lg shadow-xs transition space-x-2" title="Import jadwal dari file PDF, Excel, CSV, atau JSON">
                         <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
                         <span>Import Jadwal (Multi-File)</span>
+                    </button>
+                    <button type="button" onclick="openDestroyAllModal()" class="inline-flex items-center px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-lg shadow-xs transition space-x-2" title="Kosongkan seluruh data jadwal untuk keperluan simulasi">
+                        <svg class="w-4 h-4 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        <span>Hapus Semua Jadwal</span>
                     </button>
                 @endif
             </div>
@@ -657,6 +667,29 @@
     </div>
 </div>
 
+<!-- MODAL KONFIRMASI HAPUS SEMUA JADWAL (SIMULASI RESET) -->
+<div id="destroyAllModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 hidden">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 text-center animate-in fade-in zoom-in-95 duration-200 border border-slate-100">
+        <div class="w-14 h-14 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4 text-rose-600">
+            <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+        </div>
+        <h3 class="text-base font-bold text-slate-800 mb-2">Kosongkan Seluruh Jadwal?</h3>
+        <p class="text-xs text-slate-500 mb-6 leading-relaxed">
+            Fitur ini dibuat khusus untuk <strong>keperluan simulasi & reset pengujian</strong>. Seluruh data jadwal pelajaran (Putaran 1 & Putaran 2) serta catatan jurnal simulasi akan dikosongkan.
+        </p>
+        <form action="{{ route('waka.schedules.destroy_all') }}" method="POST" class="flex gap-3 justify-center">
+            @csrf
+            <button type="button" onclick="closeDestroyAllModal()" class="w-1/2 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition cursor-pointer">
+                Batal
+            </button>
+            <button type="submit" class="w-1/2 py-2.5 px-4 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                <span>Ya, Hapus Semua</span>
+            </button>
+        </form>
+    </div>
+</div>
+
 <script>
     let currentMajor = '{{ $selectedMajor }}';
 
@@ -776,6 +809,14 @@
         filterMajor('all');
     }
 
+    // Modal Hapus Semua Jadwal
+    function openDestroyAllModal() {
+        document.getElementById('destroyAllModal').classList.remove('hidden');
+    }
+    function closeDestroyAllModal() {
+        document.getElementById('destroyAllModal').classList.add('hidden');
+    }
+
     // Modal Import Jadwal
     function openImportScheduleModal() {
         document.getElementById('importScheduleModal').classList.remove('hidden');
@@ -784,8 +825,10 @@
         document.getElementById('importScheduleModal').classList.add('hidden');
     }
     window.addEventListener('click', function(e) {
-        const modal = document.getElementById('importScheduleModal');
-        if (e.target === modal) closeImportScheduleModal();
+        const importModal = document.getElementById('importScheduleModal');
+        const destroyModal = document.getElementById('destroyAllModal');
+        if (e.target === importModal) closeImportScheduleModal();
+        if (e.target === destroyModal) closeDestroyAllModal();
     });
 
     // Toggle Tampilan Pengaturan Siklus (Otomatis vs Manual)

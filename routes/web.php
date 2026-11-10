@@ -189,6 +189,7 @@ Route::middleware(['auth', 'role:waka_kurikulum', 'active.session'])->group(func
     Route::post('/waka/schedules/import', [\App\Http\Controllers\Web\ScheduleController::class, 'importSchedules'])->name('waka.schedules.import');
     Route::get('/waka/schedules', [\App\Http\Controllers\Web\ScheduleController::class, 'index'])->name('waka.schedules.index');
     Route::post('/waka/schedules', [\App\Http\Controllers\Web\ScheduleController::class, 'store'])->name('waka.schedules.store');
+    Route::post('/waka/schedules/destroy-all', [\App\Http\Controllers\Web\ScheduleController::class, 'destroyAll'])->name('waka.schedules.destroy_all');
     Route::delete('/waka/schedules/{id}', [\App\Http\Controllers\Web\ScheduleController::class, 'destroy'])->name('waka.schedules.destroy');
 
     // Pengaturan Putaran & Lock Schedule
