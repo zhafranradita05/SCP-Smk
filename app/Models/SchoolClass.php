@@ -35,6 +35,11 @@ class SchoolClass extends Model
     }
 
     /**
+     * 8 Kode Jurusan Resmi di SMKN 1 Bantul
+     */
+    public const VALID_MAJORS = ['RPL', 'TKJ', 'DKV', 'AK', 'MP', 'BD', 'BR', 'LPS'];
+
+    /**
      * Accessor untuk mendeteksi kode Jurusan dari nama kelas
      * Contoh: "XII RPL 2" => "RPL", "X TKJ 1" => "TKJ", "XI DKV 1" => "DKV", "X MP 1" => "MP"
      */
@@ -55,15 +60,21 @@ class SchoolClass extends Model
                 'AKL'  => 'AK',
                 'BDP'  => 'BD',
             ];
-            return $aliasMap[$raw] ?? $raw;
+            $canonical = $aliasMap[$raw] ?? $raw;
+            if (in_array($canonical, self::VALID_MAJORS)) {
+                return $canonical;
+            }
         }
 
         $parts = preg_split('/\s+/', $clean);
         if (count($parts) >= 2) {
             // Bersihkan angka rombel jika menempel (contoh: "AK1" -> "AK")
             $candidate = strtoupper(preg_replace('/[0-9]+$/', '', $parts[1]));
-            return !empty($candidate) ? $candidate : strtoupper($parts[1]);
+            if (in_array($candidate, self::VALID_MAJORS)) {
+                return $candidate;
+            }
         }
+
         return 'UMUM';
     }
 

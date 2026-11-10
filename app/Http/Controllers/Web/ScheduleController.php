@@ -2527,10 +2527,14 @@ class ScheduleController extends Controller
         $totalPutaran1 = $allSchedules->where('cycle', 'putaran_1')->count();
         $totalPutaran2 = $allSchedules->where('cycle', 'putaran_2')->count();
 
-        // Buat daftar Jurusan yang ada di sekolah secara dinamis
+        // Buat daftar Jurusan yang ada di sekolah secara dinamis (Hanya 8 Jurusan Resmi SMKN 1 Bantul)
+        $validMajors = \App\Models\SchoolClass::VALID_MAJORS;
         $majors = [];
         foreach ($classes as $c) {
             $mCode = $c->major;
+            if (!in_array($mCode, $validMajors)) {
+                continue; // Abaikan jurusan tidak resmi / tidak terdata
+            }
             if (!isset($majors[$mCode])) {
                 $majors[$mCode] = [
                     'code'      => $mCode,
