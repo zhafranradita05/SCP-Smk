@@ -51,3 +51,4 @@ return new class extends Migration
         // No-op: Data sinkronisasi role tidak perlu dibatalkan
     }
 };
+
