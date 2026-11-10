@@ -58,15 +58,18 @@ class TeacherDashboardController extends Controller
             ? "Guru Pengajar & Wali Kelas {$homeroomClass->name}"
             : ($user->role === 'wali_kelas' ? "Guru Pengajar & Wali Kelas" : "Guru Pengajar");
 
-        // Ambil jadwal mengajar guru ini HARI INI pada siklus aktif (dan jadwal kelas binaan jika wali kelas)
+        // Ambil jadwal mengajar HANYA milik guru ini HARI INI pada siklus aktif
+        // Sesuai aturan: Setiap guru HANYA bisa melihat jadwal mata pelajarannya sendiri (selain mapelnya tidak ditampilkan)
         $myActiveSchedulesToday = Schedule::with(['schoolClass', 'room', 'teacher'])
             ->where('day', $currentDay)
             ->whereIn('cycle', $cycleVariants)
-            ->where(function ($q) use ($user, $homeroomClass) {
-                $q->where('teacher_id', $user->id);
-                if ($homeroomClass) {
-                    $q->orWhere('class_id', $homeroomClass->id);
-                }
+            ->where(function ($q) use ($user) {
+                $q->where('teacher_id', $user->id)
+                  ->orWhereHas('teacher', function ($t) use ($user) {
+                      $t->where('id', $user->id)
+                        ->orWhere('name', $user->name)
+                        ->orWhere('username', $user->username);
+                  });
             })
             ->orderBy('start_time')
             ->get();
@@ -109,8 +112,8 @@ class TeacherDashboardController extends Controller
                     'class_name'     => $sched->schoolClass->name ?? '-',
                     'room_name'      => $sched->room->name ?? 'Ruang Kelas',
                     'teacher_name'   => $sched->teacher->name ?? 'Guru Pengajar',
-                    'is_my_teaching' => $isMyTeaching,
-                    'type_badge'     => $isMyTeaching ? 'Mengajar' : ($homeroomClass ? "Kelas {$homeroomClass->name}" : 'Kelas Binaan'),
+                    'is_my_teaching' => true,
+                    'type_badge'     => 'Mengajar',
                     'day'            => $sched->day,
                     'cycle'          => $sched->cycle,
                     'start_time'     => substr($sched->start_time, 0, 5),
@@ -174,13 +177,16 @@ class TeacherDashboardController extends Controller
         }
 
         // Ambil jadwal mingguan guru (Senin - Jumat) KHUSUS SIKLUS AKTIF yang ditentukan Waka Kurikulum
+        // HANYA mata pelajaran milik guru tersebut (selain mapelnya tidak ditampilkan)
         $allTeacherSchedules = Schedule::with(['schoolClass', 'room', 'teacher'])
             ->whereIn('cycle', $cycleVariants)
-            ->where(function ($q) use ($user, $homeroomClass) {
-                $q->where('teacher_id', $user->id);
-                if ($homeroomClass) {
-                    $q->orWhere('class_id', $homeroomClass->id);
-                }
+            ->where(function ($q) use ($user) {
+                $q->where('teacher_id', $user->id)
+                  ->orWhereHas('teacher', function ($t) use ($user) {
+                      $t->where('id', $user->id)
+                        ->orWhere('name', $user->name)
+                        ->orWhere('username', $user->username);
+                  });
             })
             ->orderBy('start_time')
             ->get();
@@ -198,7 +204,6 @@ class TeacherDashboardController extends Controller
         foreach ($allTeacherSchedules as $sched) {
             $sDay = ucfirst(strtolower(trim($sched->day)));
             $sCycle = (trim($sched->cycle) === 'putaran_2' || trim($sched->cycle) === '2') ? 'putaran_2' : 'putaran_1';
-            $isMyTeaching = ($sched->teacher_id == $user->id);
 
             $item = [
                 'id'             => $sched->id,
@@ -206,8 +211,8 @@ class TeacherDashboardController extends Controller
                 'class_name'     => $sched->schoolClass->name ?? '-',
                 'room_name'      => $sched->room->name ?? 'Ruang Kelas',
                 'teacher_name'   => $sched->teacher->name ?? 'Guru Pengajar',
-                'is_my_teaching' => $isMyTeaching,
-                'type_badge'     => $isMyTeaching ? 'Mengajar' : ($homeroomClass ? "Kelas {$homeroomClass->name}" : 'Kelas Binaan'),
+                'is_my_teaching' => true,
+                'type_badge'     => 'Mengajar',
                 'day'            => $sched->day,
                 'cycle'          => $sched->cycle,
                 'start_time'     => substr($sched->start_time, 0, 5),
@@ -288,15 +293,16 @@ class TeacherDashboardController extends Controller
             ? ['putaran_2', '2', 'Putaran 2', 'PUTARAN 2', 'PUT 2']
             : ['putaran_1', '1', 'Putaran 1', 'PUTARAN 1', 'PUT 1'];
 
-        $homeroomClass = SchoolClass::where('homeroom_teacher_id', $user->id)->first();
-
+        // Ambil jadwal mingguan HANYA mapel yang diampu oleh guru tersebut (selain mapelnya tidak ditampilkan)
         $allTeacherSchedules = Schedule::with(['schoolClass', 'room', 'teacher'])
             ->whereIn('cycle', $cycleVariants)
-            ->where(function ($q) use ($user, $homeroomClass) {
-                $q->where('teacher_id', $user->id);
-                if ($homeroomClass) {
-                    $q->orWhere('class_id', $homeroomClass->id);
-                }
+            ->where(function ($q) use ($user) {
+                $q->where('teacher_id', $user->id)
+                  ->orWhereHas('teacher', function ($t) use ($user) {
+                      $t->where('id', $user->id)
+                        ->orWhere('name', $user->name)
+                        ->orWhere('username', $user->username);
+                  });
             })
             ->orderBy('start_time')
             ->get();
@@ -308,7 +314,6 @@ class TeacherDashboardController extends Controller
         $scheduleList = [];
         foreach ($allTeacherSchedules as $sched) {
             $sDay = ucfirst(strtolower(trim($sched->day)));
-            $isMyTeaching = ($sched->teacher_id == $user->id);
 
             $item = [
                 'id'             => $sched->id,
@@ -316,8 +321,8 @@ class TeacherDashboardController extends Controller
                 'class_name'     => $sched->schoolClass->name ?? '-',
                 'room_name'      => $sched->room->name ?? 'Ruang Kelas',
                 'teacher_name'   => $sched->teacher->name ?? 'Guru Pengajar',
-                'is_my_teaching' => $isMyTeaching,
-                'type_badge'     => $isMyTeaching ? 'Mengajar' : ($homeroomClass ? "Kelas {$homeroomClass->name}" : 'Kelas Binaan'),
+                'is_my_teaching' => true,
+                'type_badge'     => 'Mengajar',
                 'day'            => $sched->day,
                 'cycle'          => $sched->cycle,
                 'start_time'     => substr($sched->start_time, 0, 5),
