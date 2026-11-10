@@ -85,7 +85,10 @@ Route::get('deploy-migrate-{secret}', function (Request $request, $secret) {
         Artisan::call('optimize:clear');
 
         $stats = [
-            'sched_1902_1903' => \App\Models\Schedule::whereIn('id', [1902, 1903])->get(),
+            'total_rooms' => \App\Models\Room::count(),
+            'total_classes' => \App\Models\SchoolClass::count(),
+            'total_schedules' => \App\Models\Schedule::count(),
+            'total_teachers' => \App\Models\User::whereIn('role', ['guru', 'wali_kelas', 'guru_bk'])->count(),
             'active_cycle' => \App\Models\Setting::first()->active_cycle ?? null,
             'carbon_now' => [
                 'day' => \Carbon\Carbon::now('Asia/Jakarta')->format('l'),

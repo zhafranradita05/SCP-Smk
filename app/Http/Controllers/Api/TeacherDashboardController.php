@@ -210,26 +210,32 @@ class TeacherDashboardController extends Controller
             ]
         ];
 
+        $allTeacherSchedulesList = [];
         foreach ($allTeacherSchedules as $sched) {
-            $sDay = ucfirst(strtolower($sched->day));
-            $sCycle = ($sched->cycle === 'putaran_2') ? 'putaran_2' : 'putaran_1';
+            $sDay = ucfirst(strtolower(trim($sched->day)));
+            $sCycle = (trim($sched->cycle) === 'putaran_2' || trim($sched->cycle) === '2') ? 'putaran_2' : 'putaran_1';
             $isMyTeaching = ($sched->teacher_id == $user->id);
 
+            $item = [
+                'id'             => $sched->id,
+                'subject'        => $sched->subject,
+                'class_name'     => $sched->schoolClass->name ?? '-',
+                'room_name'      => $sched->room->name ?? 'Ruang Kelas',
+                'teacher_name'   => $sched->teacher->name ?? 'Guru Pengajar',
+                'is_my_teaching' => $isMyTeaching,
+                'type_badge'     => $isMyTeaching ? 'Mengajar' : ($homeroomClass ? "Kelas {$homeroomClass->name}" : 'Kelas Binaan'),
+                'day'            => $sched->day,
+                'cycle'          => $sched->cycle,
+                'start_time'     => substr($sched->start_time, 0, 5),
+                'end_time'       => substr($sched->end_time, 0, 5),
+                'time_range'     => substr($sched->start_time, 0, 5) . ' - ' . substr($sched->end_time, 0, 5),
+                'status'         => 'Terjadwal'
+            ];
+
+            $allTeacherSchedulesList[] = $item;
+
             if (isset($weeklySchedules[$sCycle][$sDay])) {
-                $weeklySchedules[$sCycle][$sDay][] = [
-                    'id'             => $sched->id,
-                    'subject'        => $sched->subject,
-                    'class_name'     => $sched->schoolClass->name ?? '-',
-                    'room_name'      => $sched->room->name ?? 'Ruang Kelas',
-                    'teacher_name'   => $sched->teacher->name ?? 'Guru Pengajar',
-                    'is_my_teaching' => $isMyTeaching,
-                    'type_badge'     => $isMyTeaching ? 'Mengajar' : ($homeroomClass ? "Kelas {$homeroomClass->name}" : 'Kelas Binaan'),
-                    'day'            => $sched->day,
-                    'cycle'          => $sched->cycle,
-                    'start_time'     => substr($sched->start_time, 0, 5),
-                    'end_time'       => substr($sched->end_time, 0, 5),
-                    'time_range'     => substr($sched->start_time, 0, 5) . ' - ' . substr($sched->end_time, 0, 5),
-                ];
+                $weeklySchedules[$sCycle][$sDay][] = $item;
             }
         }
 
@@ -263,6 +269,7 @@ class TeacherDashboardController extends Controller
                 'total_sessions_today' => $totalSessions,
                 'total_hours_today' => $totalHours,
                 'schedules_today' => $scheduleItems,
+                'schedules' => $allTeacherSchedulesList,
                 'other_cycle' => [
                     'key' => $otherCycle,
                     'label' => $otherCycleLabel,
