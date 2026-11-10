@@ -998,9 +998,34 @@ class ScheduleController extends Controller
         // Helper cari Kelas
         $findClass = function($classStr) use (&$classes) {
             if (empty($classStr)) return null;
+
+            // 1. Coba resolusi nama kanonikal resmi 48 kelas SMKN 1 Bantul terlebih dahulu
+            $canonical = SchoolClass::canonicalName($classStr);
+            if ($canonical) {
+                $found = $classes->first(function ($c) use ($canonical) {
+                    return $c->name === $canonical || strcasecmp($c->name, $canonical) === 0 ||
+                           str_replace(' ', '', strtolower($c->name)) === str_replace(' ', '', strtolower($canonical));
+                });
+                if ($found) {
+                    return $found->id;
+                }
+
+                // Cek langsung ke database jika belum termuat di koleksi lokal
+                $inDb = SchoolClass::where('name', $canonical)->first();
+                if ($inDb) {
+                    $classes->push($inDb);
+                    return $inDb->id;
+                }
+
+                // Buat kelas resmi kanonikal jika belum ada
+                $created = SchoolClass::create(['name' => $canonical]);
+                $classes->push($created);
+                return $created->id;
+            }
+
+            // Fallback untuk format umum
             $raw = trim((string)$classStr, " \t\n\r\0\x0B'\"");
-            // Bersihkan nomor urut FET (misal: "1..XII BR 1" -> "XII BR 1")
-            $raw = preg_replace('/^[0-9]+[\.\s\-]+/', '', $raw);
+            $raw = preg_replace('/^[0-9]+(?:\.+|[\.\s]*\-+)\s*/', '', $raw);
             $raw = trim($raw, " \t\n\r\0\x0B'\"");
             if (empty($raw) || strlen($raw) < 2) return null;
 
@@ -1011,9 +1036,9 @@ class ScheduleController extends Controller
             $clean = strtolower(preg_replace('/\s+/', ' ', trim(str_ireplace(['kelas', 'kls'], '', $raw))));
             
             // Normalisasi Romawi
-            $clean = preg_replace('/^10\s+/', 'x ', $clean);
-            $clean = preg_replace('/^11\s+/', 'xi ', $clean);
-            $clean = preg_replace('/^12\s+/', 'xii ', $clean);
+            $clean = preg_replace('/^12(?![0-9])/i', 'xii', $clean);
+            $clean = preg_replace('/^11(?![0-9])/i', 'xi', $clean);
+            $clean = preg_replace('/^10(?![0-9])/i', 'x', $clean);
 
             // Pisahkan spasi nomor rombel (misal: "XII BR1" -> "xii br 1", minimal 2 huruf jurusan)
             if (preg_match('/^(xii|xi|x)\s*([a-z]{2,})\s*([0-9]*)$/i', $clean, $m)) {

@@ -40,6 +40,85 @@ class SchoolClass extends Model
     public const VALID_MAJORS = ['RPL', 'TKJ', 'DKV', 'AK', 'MP', 'BD', 'BR', 'LPS'];
 
     /**
+     * 48 Daftar Nama Kelas Resmi Kanonikal SMKN 1 Bantul
+     */
+    public const OFFICIAL_CLASSES = [
+        'X RPL 1', 'X RPL 2',
+        'X TKJ 1', 'X TKJ 2',
+        'X DKV 1', 'X DKV 2',
+        'X AK 1', 'X AK 2', 'X AK 3',
+        'X LPS 1', 'X LPS 2',
+        'X MP 1', 'X MP 2',
+        'X BR 1', 'X BR 2',
+        'X BD',
+
+        'XI RPL 1', 'XI RPL 2',
+        'XI TKJ 1', 'XI TKJ 2',
+        'XI DKV 1', 'XI DKV 2',
+        'XI AK 1', 'XI AK 2', 'XI AK 3',
+        'XI LPS 1', 'XI LPS 2',
+        'XI MP 1', 'XI MP 2',
+        'XI BR 1', 'XI BR 2',
+        'XI BD',
+
+        'XII RPL 1', 'XII RPL 2',
+        'XII TKJ 1', 'XII TKJ 2',
+        'XII DKV 1', 'XII DKV 2',
+        'XII AK 1', 'XII AK 2', 'XII AK 3', 'XII AK 4',
+        'XII LPS',
+        'XII MP 1', 'XII MP 2',
+        'XII BR 1', 'XII BR 2',
+        'XII BD',
+    ];
+
+    /**
+     * Resolusi Nama Kelas ke Format Kanonikal Resmi SMKN 1 Bantul
+     * Contoh:
+     * - "XI RPL1", "xi rpl 1", "11 RPL 1", "1..XI RPL 1" => "XI RPL 1"
+     * - "XII AK4" => "XII AK 4"
+     * - "XII LPS" => "XII LPS"
+     * - "X BD" => "X BD"
+     */
+    public static function canonicalName(?string $name): ?string
+    {
+        if (empty($name)) return null;
+        $clean = trim((string)$name, " \t\n\r\0\x0B'\"");
+        // Hapus nomor urut FET (misal: "1..XII BR 1" atau "1. XII BR 1")
+        $clean = preg_replace('/^[0-9]+(?:\.+|[\.\s]*\-+)\s*/', '', $clean);
+        $clean = trim(str_ireplace(['kelas', 'kls'], '', $clean));
+
+        // Normalisasi angka romawi
+        $clean = preg_replace('/^12(?![0-9])/i', 'xii', $clean);
+        $clean = preg_replace('/^11(?![0-9])/i', 'xi', $clean);
+        $clean = preg_replace('/^10(?![0-9])/i', 'x', $clean);
+
+        // Standarisasi alias Kurikulum Merdeka
+        $aliasMap = [
+            'pplg' => 'rpl',
+            'tjkt' => 'tkj',
+            'mm'   => 'dkv',
+            'mplb' => 'mp',
+            'otkp' => 'mp',
+            'akl'  => 'ak',
+            'bdp'  => 'bd',
+        ];
+        foreach ($aliasMap as $alias => $target) {
+            $clean = preg_replace('/\b' . $alias . '\b/i', $target, $clean);
+        }
+
+        $norm = preg_replace('/[^a-z0-9]/', '', strtolower($clean));
+
+        foreach (self::OFFICIAL_CLASSES as $official) {
+            $officialNorm = preg_replace('/[^a-z0-9]/', '', strtolower($official));
+            if ($norm === $officialNorm) {
+                return $official;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Accessor untuk mendeteksi kode Jurusan dari nama kelas
      * Contoh: "XII RPL 2" => "RPL", "X TKJ 1" => "TKJ", "XI DKV 1" => "DKV", "X MP 1" => "MP"
      */

@@ -346,11 +346,16 @@ class MasterDataController extends Controller
 
                 // PROSES 1: DATA WALI KELAS
                 if ($isWaliKelas && !empty($kelasVal)) {
-                    // Normalisasi nama kelas (misal: "xii rpl 2" -> "XII RPL 2")
-                    $className = strtoupper(preg_replace('/\s+/', ' ', trim($kelasVal)));
+                    // Normalisasi nama kelas ke format kanonikal resmi SMKN 1 Bantul (misal: "XI RPL1" -> "XI RPL 1")
+                    $canonical = SchoolClass::canonicalName($kelasVal);
+                    $className = $canonical ?: strtoupper(preg_replace('/\s+/', ' ', trim($kelasVal)));
 
                     // Cek atau buat kelas
                     $class = SchoolClass::where('name', $className)->first();
+                    if (!$class && $canonical) {
+                        // Cek variasi tanpa spasi jika ada di DB
+                        $class = SchoolClass::all()->first(fn($c) => SchoolClass::canonicalName($c->name) === $canonical);
+                    }
                     if (!$class) {
                         $class = SchoolClass::create([
                             'name'                => $className,
@@ -576,6 +581,11 @@ class MasterDataController extends Controller
      */
     public function storeClass(Request $request)
     {
+        $canonical = SchoolClass::canonicalName($request->name);
+        if ($canonical) {
+            $request->merge(['name' => $canonical]);
+        }
+
         $request->validate([
             'name'                => 'required|string|max:50|unique:classes,name',
             'homeroom_teacher_id' => 'nullable|exists:users,id|unique:classes,homeroom_teacher_id',
@@ -585,7 +595,7 @@ class MasterDataController extends Controller
         ]);
 
         $class = SchoolClass::create([
-            'name'                => strtoupper(trim($request->name)),
+            'name'                => $canonical ?: strtoupper(trim($request->name)),
             'homeroom_teacher_id' => $request->homeroom_teacher_id ?: null,
         ]);
 
