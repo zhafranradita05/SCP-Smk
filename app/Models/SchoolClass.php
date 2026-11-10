@@ -41,12 +41,28 @@ class SchoolClass extends Model
     public function getMajorAttribute()
     {
         $clean = trim($this->name);
-        if (preg_match('/\b(RPL|PPLG|TKJ|TJKT|DKV|MM|MP|MPLB|OTKP|AKL|AK|BDP|BD|BR|LPS|TBG|TBS)\b/i', $clean, $matches)) {
-            return strtoupper($matches[1]);
+        // Urutkan kode yang lebih panjang terlebih dahulu (contoh: PPLG sebelum RPL, AKL sebelum AK)
+        // Gunakan (?![A-Za-z]) agar format tanpa spasi seperti "X AK1" atau "X RPL1" tetap terdeteksi jurusannya
+        if (preg_match('/\b(PPLG|RPL|TJKT|TKJ|DKV|MM|MPLB|OTKP|MP|AKL|AK|BDP|BD|BR|LPS|TBG|TBS)(?![A-Za-z])/i', $clean, $matches)) {
+            $raw = strtoupper($matches[1]);
+            // Standarisasi alias Kurikulum Merdeka ke 8 kode jurusan resmi SMKN 1 Bantul
+            $aliasMap = [
+                'PPLG' => 'RPL',
+                'TJKT' => 'TKJ',
+                'MM'   => 'DKV',
+                'MPLB' => 'MP',
+                'OTKP' => 'MP',
+                'AKL'  => 'AK',
+                'BDP'  => 'BD',
+            ];
+            return $aliasMap[$raw] ?? $raw;
         }
+
         $parts = preg_split('/\s+/', $clean);
         if (count($parts) >= 2) {
-            return strtoupper($parts[1]);
+            // Bersihkan angka rombel jika menempel (contoh: "AK1" -> "AK")
+            $candidate = strtoupper(preg_replace('/[0-9]+$/', '', $parts[1]));
+            return !empty($candidate) ? $candidate : strtoupper($parts[1]);
         }
         return 'UMUM';
     }

@@ -2544,6 +2544,17 @@ class ScheduleController extends Controller
             ];
         }
 
+        // Urutkan tab jurusan agar konsisten dan rapi sesuai 8 kejuruan SMKN 1 Bantul
+        $standardOrder = ['RPL', 'TKJ', 'DKV', 'AK', 'MP', 'BD', 'BR', 'LPS'];
+        uksort($majors, function($a, $b) use ($standardOrder) {
+            $posA = array_search($a, $standardOrder);
+            $posB = array_search($b, $standardOrder);
+            if ($posA !== false && $posB !== false) return $posA <=> $posB;
+            if ($posA !== false) return -1;
+            if ($posB !== false) return 1;
+            return strcmp($a, $b);
+        });
+
         // Hitung total jadwal per Jurusan
         foreach ($allSchedules as $s) {
             $sMajor = $s->schoolClass?->major ?? 'UMUM';
