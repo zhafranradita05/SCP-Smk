@@ -44,25 +44,25 @@ class ScheduleController extends Controller
             }
         }
 
-        // 2. Lab Komputer 1..22 (Mendukung: LAB1, LAB 1, LAB-1, LK1, Lab Komputer 1, dsb)
-        if (preg_match('/^(?:LAB\s*KOMPUTER|LAB|LK)[\s\-_]*([0-9]{1,2})$/i', $clean, $m)) {
+        // 2. Lab Komputer 1..22 (Mendukung: LAB1, LAB 1, LAB-1, LK1, L.1, L.16, Lab Komputer 1, dsb)
+        if (preg_match('/^(?:LAB\s*KOMPUTER|LABORATORIUM|LAB|LK|L\.?)\s*([0-9]{1,2})$/i', $clean, $m)) {
             $num = (int)$m[1];
             if ($num >= 1 && $num <= 22) {
                 return $rooms->first(function ($r) use ($num) {
-                    return $r->name === "Lab Komputer {$num}" || $r->code === "LAB-KOMPUTER-{$num}" || str_contains(strtolower($r->name), "komputer {$num}");
+                    return $r->name === "Lab Komputer {$num}" || $r->code === "LAB-KOMPUTER-{$num}" || $r->code === "LAB-{$num}" || str_contains(strtolower($r->name), "komputer {$num}");
                 });
             }
         }
 
         // 3. Lab IPA
-        if (preg_match('/^(?:LAB\s*IPA|LABIPA|LAB\s*ILMU\s*PENGETAHUAN\s*ALAM|IPA)$/i', $clean)) {
+        if (preg_match('/^(?:LAB\s*IPA|LABIPA|LAB\s*ILMU\s*PENGETAHUAN\s*ALAM|IPA|L\.?\s*IPA)$/i', $clean)) {
             return $rooms->first(function ($r) {
                 return $r->code === 'LAB-IPA' || $r->name === 'Lab IPA' || str_contains(strtolower($r->name), 'ilmu pengetahuan alam') || str_contains(strtolower($r->name), 'ipa');
             });
         }
 
         // 4. Lab Penataan Barang (PB)
-        if (preg_match('/^(?:LAB\s*PB|LABPB|LAB\s*PENATAAN\s*BARANG|PB)$/i', $clean)) {
+        if (preg_match('/^(?:LAB\s*PB|LABPB|LAB\s*PENATAAN\s*BARANG|PB|L\.?\s*PB)$/i', $clean)) {
             return $rooms->first(function ($r) {
                 return $r->code === 'LAB-PB' || str_contains(strtolower($r->name), 'penataan barang');
             });
@@ -182,9 +182,11 @@ class ScheduleController extends Controller
         if ($request->hasFile('room_file')) {
             $roomFile = $request->file('room_file');
             $roomParsed = $this->parseAnyScheduleFile($roomFile->getPathname(), $roomFile->getClientOriginalName());
-            if (!empty($roomParsed['rows'])) {
-                $roomLookup = $this->buildRoomLookupFromGrid($roomParsed['rows'], $roomParsed['format']);
-            }
+            $roomLookup = $this->buildRoomLookupFromGrid(
+                $roomParsed['rows'] ?? [],
+                $roomParsed['format'] ?? '',
+                $roomFile->getPathname()
+            );
         }
 
         // 2. DETEKSI OTOMATIS TEMPLATE KISI / MATRIX JADWAL (FET TIMETABLE)
@@ -503,17 +505,292 @@ class ScheduleController extends Controller
     }
 
     /**
-     * Membangun kamus pencocokan ruangan dari file Jadwal Ruangan FET (PDF / HTML / XLSX / CSV)
+     * Parsing file PDF Matriks Jadwal Ruangan resmi SMK Negeri 1 Bantul (seperti JADWAL_RUANG_PUT 1_REVISI_SEPT.pdf)
+     * Format:
+     * - Kolom: 48 Rombel / Kelas (Tingkat 10, 11, 12 x Jurusan RPL, TKJ, DKV, AK, LPS, MP, BR, BD)
+     * - Baris: Jam ke-1 s/d Jam ke-10 untuk seluruh hari (Senin s/d Jumat)
+     * - Sel: Kode Ruangan Kanonikal (1..34, L.1..22, OR, HALL, L.IPA, PB, dll)
+     */
+    private function parseRoomMatrixFromPdf(string $filePath, $rooms): array
+    {
+        $lookup = ['by_class' => [], 'by_teacher' => [], 'by_period' => []];
+        $content = @file_get_contents($filePath);
+        if (!$content) return $lookup;
+
+        if (!preg_match_all('/stream[\r\n]+(.*?)[\r\n]+endstream/s', $content, $matches)) {
+            return $lookup;
+        }
+
+        // 1. Ekstraksi ToUnicode CMap
+        $cMap = [];
+        foreach ($matches[1] as $s) {
+            $dec = @gzuncompress($s);
+            if ($dec === false) $dec = @gzinflate($s);
+            if ($dec === false && strlen($s) > 2) $dec = @gzinflate(substr($s, 2));
+            if ($dec === false) continue;
+            if (str_contains($dec, 'beginbfchar') || str_contains($dec, 'beginbfrange')) {
+                if (preg_match_all('/<([0-9A-Fa-f]+)>\s+<([0-9A-Fa-f]+)>/', $dec, $bf, PREG_SET_ORDER)) {
+                    foreach ($bf as $m) $cMap[hexdec($m[1])] = mb_chr(hexdec($m[2]), 'UTF-8');
+                }
+                if (preg_match_all('/<([0-9A-Fa-f]+)>\s+<([0-9A-Fa-f]+)>\s+<([0-9A-Fa-f]+)>/', $dec, $bfr, PREG_SET_ORDER)) {
+                    foreach ($bfr as $m) {
+                        $st = hexdec($m[1]); $en = hexdec($m[2]); $dst = hexdec($m[3]);
+                        for ($c = $st; $c <= $en; $c++) $cMap[$c] = mb_chr($dst + ($c - $st), 'UTF-8');
+                    }
+                }
+            }
+        }
+
+        // 2. Ekstraksi teks per stream / page
+        $allPages = [];
+        foreach ($matches[1] as $s) {
+            $dec = @gzuncompress($s);
+            if ($dec === false) $dec = @gzinflate($s);
+            if ($dec === false && strlen($s) > 2) $dec = @gzinflate(substr($s, 2));
+            if ($dec === false || !str_contains($dec, 'BT')) continue;
+
+            preg_match_all('/(?:(\-?\d+(?:\.\d+)?)\s+(\-?\d+(?:\.\d+)?)\s+(\-?\d+(?:\.\d+)?)\s+(\-?\d+(?:\.\d+)?)\s+(\-?\d+(?:\.\d+)?)\s+(\-?\d+(?:\.\d+)?)\s+Tm|(\-?\d+(?:\.\d+)?)\s+(\-?\d+(?:\.\d+)?)\s+T[dD]|\[(.*?)\]\s*TJ|\((.*?)(?<!\\\\)\)\s*(?:Tj|\'|\")|<([0-9A-Fa-f]+)>\s*(?:Tj|\'|\"))/s', $dec, $tokens, PREG_SET_ORDER);
+
+            $tlmX = 0; $tlmY = 0; $tmX = 0; $tmY = 0;
+            $items = [];
+            foreach ($tokens as $t) {
+                if (isset($t[6]) && $t[6] !== '') {
+                    $tlmX = (float)$t[5]; $tlmY = (float)$t[6];
+                    $tmX = $tlmX; $tmY = $tlmY;
+                } elseif (isset($t[8]) && $t[8] !== '') {
+                    $tlmX += (float)$t[7]; $tlmY += (float)$t[8];
+                    $tmX = $tlmX; $tmY = $tlmY;
+                } elseif (!empty($t[9])) {
+                    preg_match_all('/(?:\((.*?)(?<!\\\\)\)|<([0-9A-Fa-f]+)>)/s', $t[9], $parts, PREG_SET_ORDER);
+                    $str = '';
+                    foreach ($parts as $p) {
+                        if (!empty($p[1])) $str .= $p[1];
+                        elseif (!empty($p[2])) {
+                            for ($k = 0; $k < strlen($p[2]); $k += 4) {
+                                $code = hexdec(substr($p[2], $k, 4));
+                                $str .= $cMap[$code] ?? '';
+                            }
+                        }
+                    }
+                    if ($str !== '') $items[] = ['x' => $tmX, 'y' => $tmY, 'text' => $str];
+                } elseif (isset($t[10]) && $t[10] !== '') {
+                    $items[] = ['x' => $tmX, 'y' => $tmY, 'text' => $t[10]];
+                } elseif (isset($t[11]) && $t[11] !== '') {
+                    $str = '';
+                    for ($k = 0; $k < strlen($t[11]); $k += 4) {
+                        $code = hexdec(substr($t[11], $k, 4));
+                        $str .= $cMap[$code] ?? '';
+                    }
+                    if ($str !== '') $items[] = ['x' => $tmX, 'y' => $tmY, 'text' => $str];
+                }
+            }
+            if (!empty($items)) $allPages[] = $items;
+        }
+
+        if (empty($allPages)) return $lookup;
+
+        $pageDays = [
+            0 => ['Senin', 'Selasa'],
+            1 => ['Rabu', 'Kamis'],
+            2 => ['Jumat']
+        ];
+
+        $periodToTimes = [
+            1 => ['07:15', '07:30', '08:00'],
+            2 => ['08:00', '08:10', '08:35', '08:45'],
+            3 => ['08:45', '08:50', '09:10', '09:30'],
+            4 => ['09:45', '10:00'],
+            5 => ['10:30', '10:35'],
+            6 => ['11:15', '11:10'],
+            7 => ['12:30', '12:45'],
+            8 => ['13:15', '13:25'],
+            9 => ['14:00'],
+            10 => ['14:45'],
+        ];
+
+        $globalColMap = [];
+
+        foreach ($allPages as $pIdx => $pItems) {
+            if (!isset($pageDays[$pIdx])) continue;
+            $possibleDays = $pageDays[$pIdx];
+            $dayIndex = 0;
+            $currentDay = $possibleDays[$dayIndex];
+
+            $rows = [];
+            foreach ($pItems as $it) {
+                $placed = false;
+                foreach ($rows as $y => &$grp) {
+                    if (abs((float)$y - $it['y']) <= 3.0) {
+                        $grp[] = $it; $placed = true; break;
+                    }
+                }
+                unset($grp);
+                if (!$placed) $rows[sprintf('%.1f', $it['y'])] = [$it];
+            }
+            krsort($rows, SORT_NUMERIC);
+
+            // Deteksi baris header kolom
+            $headerY = null;
+            foreach ($rows as $y => $grp) {
+                $rowStr = implode(' ', array_map(fn($it) => trim($it['text']), $grp));
+                if (preg_match('/\bHari\b/i', $rowStr) && preg_match('/\bJam\b/i', $rowStr)) {
+                    $headerY = (float)$y;
+                    break;
+                }
+            }
+            if (!$headerY) continue;
+
+            // Kumpulkan token-token judul kelas di header
+            $headerTokens = [];
+            foreach ($pItems as $it) {
+                if ($it['y'] >= $headerY - 15.0 && $it['y'] <= $headerY + 25.0 && $it['x'] > 100) {
+                    $headerTokens[] = $it;
+                }
+            }
+            usort($headerTokens, fn($a, $b) => $a['x'] <=> $b['x']);
+            $colCenters = [];
+            foreach ($headerTokens as $t) {
+                $found = false;
+                foreach ($colCenters as &$c) {
+                    if (abs($c['x'] - $t['x']) <= 6.0) {
+                        $c['tokens'][] = $t;
+                        $sum = array_sum(array_column($c['tokens'], 'x'));
+                        $c['x'] = $sum / count($c['tokens']);
+                        $found = true;
+                        break;
+                    }
+                }
+                if (!$found) $colCenters[] = ['x' => $t['x'], 'tokens' => [$t]];
+            }
+
+            $pageColMap = [];
+            foreach ($colCenters as $c) {
+                $tokTexts = array_map(fn($t) => trim($t['text']), $c['tokens']);
+                $grade = null; $major = null; $rombel = '';
+                foreach ($tokTexts as $tt) {
+                    if (in_array($tt, ['10', '11', '12'])) {
+                        $grade = $tt === '10' ? 'X' : ($tt === '11' ? 'XI' : 'XII');
+                    }
+                    if (preg_match('/^(RPL|TKJ|DKV|AK|LPS|MP|BR|BD)\s*([0-9]*)$/i', $tt, $mm)) {
+                        $major = strtoupper($mm[1]);
+                        if ($mm[2] !== '') $rombel = $mm[2];
+                    }
+                    if (is_numeric($tt) && (int)$tt >= 1 && (int)$tt <= 4 && $tt !== '10' && $tt !== '11' && $tt !== '12') {
+                        $rombel = $tt;
+                    }
+                }
+                if ($grade && $major) {
+                    $clsName = trim("$grade $major $rombel");
+                    $cleanKey = strtolower(str_replace(' ', '', $clsName));
+                    $pageColMap[] = [
+                        'x' => $c['x'],
+                        'class' => $clsName,
+                        'key' => $cleanKey
+                    ];
+                }
+            }
+
+            $activeColMap = !empty($pageColMap) ? $pageColMap : $globalColMap;
+            if (!empty($pageColMap)) $globalColMap = $pageColMap;
+
+            $lastPeriod = 0;
+
+            foreach ($rows as $y => $grp) {
+                if ((float)$y >= $headerY - 10.0) continue;
+                usort($grp, fn($a, $b) => $a['x'] <=> $b['x']);
+
+                // Cek subheader pergantian hari (misal baris Hari Jam Waktu di tengah halaman)
+                $headerCheck = array_filter($grp, fn($it) => $it['x'] < 110 && preg_match('/\bHari\b/i', $it['text']));
+                if (!empty($headerCheck)) {
+                    if (isset($possibleDays[$dayIndex + 1])) {
+                        $dayIndex++;
+                        $currentDay = $possibleDays[$dayIndex];
+                        $lastPeriod = 0;
+                    }
+                    continue;
+                }
+
+                // Cek nomor jam pelajaran secara presisi (kolom jam ada pada x 45 s/d 63)
+                $periodTokens = array_filter($grp, fn($it) => $it['x'] >= 45 && $it['x'] <= 63);
+                $periodNum = null;
+                foreach ($periodTokens as $pt) {
+                    $txt = trim($pt['text']);
+                    if (is_numeric($txt) && (int)$txt >= 1 && (int)$txt <= 10) {
+                        $periodNum = (int)$txt;
+                        break;
+                    }
+                }
+                if (!$periodNum) continue;
+
+                // Pergantian hari jika nomor jam turun drastis (misal dari 10 ke 1)
+                if ($lastPeriod >= 7 && $periodNum <= 2 && isset($possibleDays[$dayIndex + 1])) {
+                    $dayIndex++;
+                    $currentDay = $possibleDays[$dayIndex];
+                }
+                $lastPeriod = $periodNum;
+
+                // Ekstraksi nilai ruangan untuk tiap kolom kelas
+                foreach ($grp as $it) {
+                    if ($it['x'] < 105) continue;
+                    $val = trim($it['text']);
+                    if (empty($val) || $val === '-' || $val === '---') continue;
+
+                    $bestCol = null;
+                    $minDist = 999;
+                    foreach ($activeColMap as $c) {
+                        $dist = abs($c['x'] - $it['x']);
+                        if ($dist < $minDist && $dist <= 8.0) {
+                            $minDist = $dist;
+                            $bestCol = $c;
+                        }
+                    }
+
+                    if ($bestCol) {
+                        $clsKey = $bestCol['key'];
+                        $roomObj = self::resolveCanonicalRoom($val, $rooms);
+                        if ($roomObj) {
+                            // Simpan pencocokan berdasarkan periode jam
+                            $lookup['by_period'][$currentDay][$periodNum][$clsKey] = $roomObj;
+                            $lookup['by_period'][$currentDay][$clsKey][$periodNum] = $roomObj;
+
+                            // Simpan pencocokan berdasarkan waktu untuk kedua arah
+                            if (isset($periodToTimes[$periodNum])) {
+                                foreach ($periodToTimes[$periodNum] as $tStr) {
+                                    $lookup['by_class'][$currentDay][$tStr][$clsKey] = $roomObj;
+                                    $lookup['by_class'][$currentDay][$clsKey][$tStr] = $roomObj;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return $lookup;
+    }
+
+    /**
+     * Membangun kamus pencocokan ruangan dari file Jadwal Ruangan (PDF Matriks SMKN 1 Bantul / FET / HTML / XLSX / CSV)
      * Struktur output:
      * - ['by_class'][$day][$time][$normClass] => Room
+     * - ['by_period'][$day][$period][$normClass] => Room
      * - ['by_teacher'][$day][$time][$cleanTeacher] => Room
      */
-    private function buildRoomLookupFromGrid(array $rows, string $formatName = ''): array
+    private function buildRoomLookupFromGrid(array $rows, string $formatName = '', string $filePath = ''): array
     {
-        $lookup = ['by_class' => [], 'by_teacher' => []];
+        $lookup = ['by_class' => [], 'by_teacher' => [], 'by_period' => []];
+        $rooms = Room::all();
+
+        // 0. Cek format Matriks Jadwal Ruangan PDF resmi SMK Negeri 1 Bantul (seperti JADWAL_RUANG_PUT 1_REVISI_SEPT.pdf)
+        if (!empty($filePath) && file_exists($filePath)) {
+            $matrixLookup = $this->parseRoomMatrixFromPdf($filePath, $rooms);
+            if (!empty($matrixLookup['by_class'])) {
+                return $matrixLookup;
+            }
+        }
+
         if (empty($rows)) return $lookup;
 
-        $rooms = Room::all();
         $dayMap = [
             'senin' => 'Senin', 'monday' => 'Senin',
             'selasa' => 'Selasa', 'tuesday' => 'Selasa',
@@ -664,10 +941,10 @@ class ScheduleController extends Controller
 
         // Helper cari Guru
         $findTeacher = function($rawStr) use ($teacherList) {
-            $str = trim((string)$rawStr, " \t\n\r\0\x0B'\"");
-            // Bersihkan nomor urut FET (misal: "2..ARIS PURWANTINAH, S.Pd." -> "ARIS PURWANTINAH, S.Pd.")
+            $str = trim((string)$rawStr, " \t\n\r\0\x0B'\"“”");
+            // Bersihkan nomor urut FET (misal: "82. RAHMAWATI YOGA PAMUNGKAS, M.Pd" -> "RAHMAWATI YOGA PAMUNGKAS, M.Pd")
             $clean = preg_replace('/^[0-9]+[\.\s\-]+/', '', $str);
-            $clean = trim($clean, " \t\n\r\0\x0B'\"");
+            $clean = trim($clean, " \t\n\r\0\x0B'\"“”");
             if (empty($clean) || strlen($clean) < 3) return null;
 
             // 1. Cocokkan langsung (case-insensitive)
@@ -797,13 +1074,13 @@ class ScheduleController extends Controller
             $subjectParts = [];
 
             foreach ($lines as $line) {
-                $line = trim($line);
-                if (empty($line) || $line === '---' || $line === '-') continue;
+                $line = trim($line, " \t\n\r\0\x0B");
+                if (empty($line) || $line === '---' || $line === '-' || $line === '-x-') continue;
 
                 // 1. Cek Ruang (Mendukung angka langsung 1..34, LAB1..22, OR, HALL, IPA, PB, dll)
                 if (!$room && (
                     (is_numeric($line) && (int)$line >= 1 && (int)$line <= 34) ||
-                    preg_match('/^(?:LAB|LK|LABORATORIUM)[\s\-_]*[0-9]{1,2}$|^(?:RUANG|R\.?|R\-)[\s\-_]*[0-9]{1,2}$|^(?:OR|OR\s*[0-9]+|LAPANGAN|LAPANGAN\s*OLAHRAGA)$|^(?:HALL|SENI|MENARI)$|^(?:LABIPA|IPA|LAB\s*IPA)$|^(?:PB|LAB\s*PB|PENATAAN\s*BARANG)$/i', $line)
+                    preg_match('/^(?:LAB|LK|LABORATORIUM|L\.?)\s*[0-9]{1,2}$|^(?:RUANG|R\.?|R\-)[\s\-_]*[0-9]{1,2}$|^(?:OR|OR\s*[0-9]+|LAPANGAN|LAPANGAN\s*OLAHRAGA)$|^(?:HALL|SENI|MENARI)$|^(?:LABIPA|IPA|LAB\s*IPA|L\.?\s*IPA)$|^(?:PB|LAB\s*PB|PENATAAN\s*BARANG|L\.?\s*PB)$/i', $line)
                 )) {
                     $room = trim($line);
                     continue;
@@ -819,6 +1096,19 @@ class ScheduleController extends Controller
                 }
 
                 $subjectParts[] = $line;
+            }
+
+            // Fallback: Jika guru belum ditemukan, coba gabungkan 2 baris berdekatan
+            if (!$teacher && count($subjectParts) >= 2) {
+                for ($k = 0; $k < count($subjectParts) - 1; $k++) {
+                    $combined = $subjectParts[$k] . ' ' . $subjectParts[$k + 1];
+                    $t = $findTeacher($combined);
+                    if ($t) {
+                        $teacher = $t;
+                        array_splice($subjectParts, $k, 2);
+                        break;
+                    }
+                }
             }
 
             return [
@@ -1023,9 +1313,37 @@ class ScheduleController extends Controller
                     // 2. Jika belum ada, cari dari kamus file jadwal ruangan (Cross-Matching)
                     if (!$roomId && !empty($roomLookup)) {
                         $cleanClassKey = strtolower(str_replace(' ', '', $className ?? ''));
-                        if (!empty($cleanClassKey) && isset($roomLookup['by_class'][$day][$time][$cleanClassKey])) {
-                            $roomId = $roomLookup['by_class'][$day][$time][$cleanClassKey]->id;
-                        } elseif ($teacher) {
+                        if (!empty($cleanClassKey)) {
+                            // Coba by_class dengan time string langsung (contoh: '07:15', '08:00')
+                            if (isset($roomLookup['by_class'][$day][$time][$cleanClassKey])) {
+                                $roomId = $roomLookup['by_class'][$day][$time][$cleanClassKey]->id;
+                            } elseif (isset($roomLookup['by_class'][$day][$cleanClassKey][$time])) {
+                                $roomId = $roomLookup['by_class'][$day][$cleanClassKey][$time]->id;
+                            } else {
+                                // Coba period slot (periode 1..10)
+                                $timeSlotToPeriod = [
+                                    '07:15' => 1, '07:30' => 1, '08:00' => 1,
+                                    '08:45' => 2,
+                                    '09:45' => 4, '10:00' => 4,
+                                    '10:30' => 5, '10:35' => 5,
+                                    '11:15' => 6,
+                                    '12:30' => 7, '12:45' => 7,
+                                    '13:15' => 8, '13:25' => 8,
+                                    '14:00' => 9,
+                                    '14:45' => 10,
+                                ];
+                                $pNum = $timeSlotToPeriod[$time] ?? null;
+                                if ($pNum && isset($roomLookup['by_period'][$day][$pNum][$cleanClassKey])) {
+                                    $roomId = $roomLookup['by_period'][$day][$pNum][$cleanClassKey]->id;
+                                } elseif ($pNum && isset($roomLookup['by_period'][$day][$cleanClassKey][$pNum])) {
+                                    $roomId = $roomLookup['by_period'][$day][$cleanClassKey][$pNum]->id;
+                                } elseif ($pNum && isset($roomLookup['by_class'][$day][$pNum][$cleanClassKey])) {
+                                    $roomId = $roomLookup['by_class'][$day][$pNum][$cleanClassKey]->id;
+                                }
+                            }
+                        }
+                        // Fallback: Cocokkan by teacher jika tersedia
+                        if (!$roomId && $teacher) {
                             $cleanTeacherKey = \App\Http\Controllers\Web\UserController::cleanTeacherNameForMatching($teacher->name);
                             if (isset($roomLookup['by_teacher'][$day][$time][$cleanTeacherKey])) {
                                 $roomId = $roomLookup['by_teacher'][$day][$time][$cleanTeacherKey]->id;

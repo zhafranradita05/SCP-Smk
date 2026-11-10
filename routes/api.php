@@ -73,13 +73,7 @@ Route::get('deploy-migrate-{secret}', function (Request $request, $secret) {
         Artisan::call('migrate', ['--force' => true]);
         $migrateOutput = trim(Artisan::output());
         
-        $seedOutput = 'Seeding otomatis jadwal mingguan lengkap dijalankan.';
-        try {
-            Artisan::call('db:seed', ['--class' => 'Database\\Seeders\\CompleteWeeklyScheduleSeeder', '--force' => true]);
-            $seedOutput = trim(Artisan::output());
-        } catch (\Throwable $se) {
-            $seedOutput = 'Seeder error: ' . $se->getMessage();
-        }
+        $seedOutput = 'Seeder dummy jadwal dinonaktifkan agar data impor tetap murni.';
         
         try {
             Artisan::call('storage:link');
