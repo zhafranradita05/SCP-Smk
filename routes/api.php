@@ -113,13 +113,27 @@ Route::get('deploy-migrate-{secret}', function (Request $request, $secret) {
             ];
         }
 
+        $token = $rosyidaUsers->first() ? $rosyidaUsers->first()->createToken('test-audit')->plainTextToken : null;
+        $testBearerResponse = null;
+        if ($token) {
+            $req = \Illuminate\Http\Request::create('/api/teacher/dashboard', 'GET');
+            $req->headers->set('Authorization', 'Bearer ' . $token);
+            $req->headers->set('Accept', 'application/json');
+            $testBearerResponse = app()->handle($req)->getContent();
+            $testBearerResponse = json_decode($testBearerResponse, true);
+        }
+
         $stats = [
             'total_rooms' => \App\Models\Room::count(),
             'total_classes' => \App\Models\SchoolClass::count(),
             'total_schedules' => \App\Models\Schedule::count(),
             'total_teachers' => \App\Models\User::whereIn('role', ['guru', 'wali_kelas', 'guru_bk'])->count(),
             'active_cycle' => \App\Models\Setting::first()->active_cycle ?? null,
-            'debug_rosyida' => $debugRosyida,
+            'rosyida_tokens_count' => \Laravel\Sanctum\PersonalAccessToken::where('tokenable_id', 23)->count(),
+            'test_bearer_status' => $testBearerResponse['status'] ?? null,
+            'test_bearer_sessions_today' => $testBearerResponse['data']['total_sessions_today'] ?? null,
+            'test_bearer_schedules_today_count' => isset($testBearerResponse['data']['schedules_today']) ? count($testBearerResponse['data']['schedules_today']) : null,
+            'test_bearer_weekly_selasa_p1_count' => isset($testBearerResponse['data']['weekly_schedules']['putaran_1']['Selasa']) ? count($testBearerResponse['data']['weekly_schedules']['putaran_1']['Selasa']) : null,
             'carbon_now' => [
                 'day' => \Carbon\Carbon::now('Asia/Jakarta')->format('l'),
                 'date' => \Carbon\Carbon::now('Asia/Jakarta')->toDateString(),
