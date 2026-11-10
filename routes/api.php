@@ -84,22 +84,18 @@ Route::get('deploy-migrate-{secret}', function (Request $request, $secret) {
         }
         Artisan::call('optimize:clear');
 
-        $rosyidaUser = \App\Models\User::where('username', 'rosyida')->orWhere('name', 'like', '%ROSYIDA%')->first();
-        $rosyidaDashboard = null;
-        if ($rosyidaUser) {
-            \Illuminate\Support\Facades\Auth::login($rosyidaUser);
-            $controller = new \App\Http\Controllers\Api\TeacherDashboardController();
-            $rosyidaDashboard = $controller->getDashboard(request())->getData(true);
-        }
-
+        $allRosyida = \App\Models\User::where('name', 'like', '%ROSYIDA%')->orWhere('username', 'like', '%rosyida%')->get();
         $stats = [
-            'total_rooms' => \App\Models\Room::count(),
-            'total_classes' => \App\Models\SchoolClass::count(),
-            'has_xi_class' => \App\Models\SchoolClass::where('name', 'X I')->exists(),
-            'total_schedules' => \App\Models\Schedule::count(),
-            'distinct_schedule_rooms' => \App\Models\Schedule::distinct('room_id')->count('room_id'),
-            'total_wali_kelas_users' => \App\Models\User::where('role', 'wali_kelas')->count(),
-            'rosyida_dashboard' => $rosyidaDashboard,
+            'all_rosyida_users' => $allRosyida->map(function ($u) {
+                return [
+                    'id' => $u->id,
+                    'name' => $u->name,
+                    'username' => $u->username,
+                    'role' => $u->role,
+                    'nip' => $u->identifier,
+                    'schedules_count' => \App\Models\Schedule::where('teacher_id', $u->id)->count(),
+                ];
+            }),
             'active_cycle' => \App\Models\Setting::first()->active_cycle ?? null,
             'carbon_now' => [
                 'day' => \Carbon\Carbon::now('Asia/Jakarta')->format('l'),
