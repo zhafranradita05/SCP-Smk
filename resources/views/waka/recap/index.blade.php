@@ -3,11 +3,11 @@
 @section('title', 'Rekapitulasi Semester')
 
 @section('header_actions')
-    <a href="{{ route('leaves.recap.print', ['class_id' => $selectedClassId]) }}" target="_blank" class="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-xs transition">
+    <a href="{{ route('leaves.recap.print') }}" target="_blank" class="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-xs transition">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
         <span>Cetak Laporan Izin Siswa</span>
     </a>
-    <a href="{{ route('waka.recap.print', ['academic_year' => $selectedYear, 'semester' => $selectedSemester, 'class_id' => $selectedClassId]) }}" target="_blank" class="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-xs transition">
+    <a href="{{ route('waka.recap.print', ['academic_year' => $selectedYear, 'semester' => $selectedSemester]) }}" target="_blank" class="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-xs transition">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
         <span>Cetak Rekap Mengajar</span>
     </a>
@@ -18,7 +18,7 @@
 
     <!-- 1. FILTER BAR PER SEMESTER & TAHUN AJARAN -->
     <div class="bg-white p-5 rounded-2xl shadow-xs border border-slate-200/90 space-y-4">
-        <form method="GET" action="{{ route('waka.recap.index') }}" id="recapFilterForm" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+        <form method="GET" action="{{ route('waka.recap.index') }}" id="recapFilterForm" class="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
             <!-- Pilihan Tahun Ajaran -->
             <div>
                 <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Tahun Ajaran</label>
@@ -36,17 +36,6 @@
                 <select name="semester" onchange="this.form.submit()" class="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-900 text-xs font-semibold focus:outline-none focus:border-blue-500 cursor-pointer">
                     <option value="ganjil" {{ $selectedSemester == 'ganjil' ? 'selected' : '' }}>Semester Ganjil (Juli - Des)</option>
                     <option value="genap" {{ $selectedSemester == 'genap' ? 'selected' : '' }}>Semester Genap (Jan - Jun)</option>
-                </select>
-            </div>
-
-            <!-- Filter Kelas -->
-            <div>
-                <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Filter Kelas</label>
-                <select name="class_id" onchange="this.form.submit()" class="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-900 text-xs font-semibold focus:outline-none focus:border-blue-500 cursor-pointer">
-                    <option value="all" {{ $selectedClassId == 'all' ? 'selected' : '' }}>Semua Kelas</option>
-                    @foreach($classes as $c)
-                        <option value="{{ $c->id }}" {{ $selectedClassId == $c->id ? 'selected' : '' }}>{{ $c->name }}</option>
-                    @endforeach
                 </select>
             </div>
 
@@ -70,14 +59,6 @@
             <span class="inline-flex items-center px-2.5 py-1 bg-blue-50 border border-blue-100 text-blue-700 rounded-md font-semibold capitalize">
                 Semester: {{ $selectedSemester }}
             </span>
-            @if($selectedClassId !== 'all')
-                @php
-                    $activeClass = $classes->firstWhere('id', $selectedClassId);
-                @endphp
-                <span class="inline-flex items-center px-2.5 py-1 bg-blue-50 border border-blue-100 text-blue-700 rounded-md font-semibold">
-                    Kelas: {{ $activeClass->name ?? $selectedClassId }}
-                </span>
-            @endif
             <span class="text-slate-400 ml-auto">Rentang: <strong>{{ $startDate->format('d M Y') }}</strong> s/d <strong>{{ $endDate->format('d M Y') }}</strong></span>
         </div>
     </div>

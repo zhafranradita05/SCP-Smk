@@ -36,7 +36,6 @@ class RecapController extends Controller
         // 1. Ambil Filter Tahun Ajaran & Semester
         $selectedYear = $request->get('academic_year', $defaultYear);
         $selectedSemester = $request->get('semester', $setting->active_semester ?? $autoSemester);
-        $selectedClassId = $request->get('class_id', 'all');
 
         // 2. Tentukan Rentang Tanggal Semester
         // Contoh '2024/2025' -> $startYear = 2024, $endYear = 2025
@@ -53,15 +52,10 @@ class RecapController extends Controller
         }
 
         // 3. Rekap Jurnal Mengajar Guru pada Semester Ini
-        $journalsQuery = Journal::with(['teacher', 'schedule.schoolClass', 'schedule.room'])
-            ->whereBetween('date', [$startDate->toDateString(), $endDate->toDateString()]);
-
-        if ($selectedClassId !== 'all') {
-            $journalsQuery->whereHas('schedule', function ($q) use ($selectedClassId) {
-                $q->where('class_id', $selectedClassId);
-            });
-        }
-        $journals = $journalsQuery->orderBy('date', 'desc')->get();
+        $journals = Journal::with(['teacher', 'schedule.schoolClass', 'schedule.room'])
+            ->whereBetween('date', [$startDate->toDateString(), $endDate->toDateString()])
+            ->orderBy('date', 'desc')
+            ->get();
 
         // Rekapitulasi per Guru (Total Jurnal yang terisi) - mencakup guru biasa & wali kelas yang mengajar
         $teachers = User::whereIn('role', ['guru', 'wali_kelas'])->orderBy('name', 'asc')->get();
@@ -82,21 +76,16 @@ class RecapController extends Controller
         $totalIzin = $leaves->where('status', 'approved')->count();
         $totalPending = $leaves->where('status', 'pending')->count();
 
-        // 5. Data Master untuk Pilihan Filter
-        $classes = SchoolClass::all();
-
         return view('waka.recap.index', compact(
             'selectedYear',
             'selectedSemester',
-            'selectedClassId',
             'startDate',
             'endDate',
             'journals',
             'teacherRecap',
             'leaves',
             'totalIzin',
-            'totalPending',
-            'classes'
+            'totalPending'
         ));
     }
 
