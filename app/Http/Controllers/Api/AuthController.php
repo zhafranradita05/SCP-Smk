@@ -292,6 +292,17 @@ class AuthController extends Controller
             $userPayload['school_class'] = $child->schoolClass;
         }
 
+        // Cek penugasan Wali Kelas & Guru BK
+        $homeroomClass = \App\Models\SchoolClass::where('homeroom_teacher_id', $user->id)->first();
+        if (!$homeroomClass) {
+            $homeroomClass = \App\Models\SchoolClass::whereHas('homeroomTeacher', function ($t) use ($user) {
+                $t->where('name', $user->name)->orWhere('username', $user->username);
+            })->first();
+        }
+        $isWaliKelas = ($user->role === 'wali_kelas' || $homeroomClass !== null);
+        $userPayload['is_wali_kelas'] = $isWaliKelas;
+        $userPayload['homeroom_class'] = $homeroomClass ? $homeroomClass->name : null;
+
         return response()->json([
             'status'  => 'success',
             'message' => 'Login berhasil',

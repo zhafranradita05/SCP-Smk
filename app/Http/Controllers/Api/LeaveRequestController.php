@@ -28,9 +28,40 @@ class LeaveRequestController extends Controller
         $user = Auth::user();
         $targetStudentId = ($user->role === 'orang_tua' && $user->student_id) ? $user->student_id : $user->id;
 
-        $today = Carbon::now('Asia/Jakarta')->toDateString();
+        $now = Carbon::now('Asia/Jakarta');
+        $today = $now->toDateString();
 
-        // 1. Batasi pengajuan maksimal 1 kali dalam 1 hari per siswa (membatasi jumlah antrean approval di wali kelas)
+        // 1. Batas tanggal minimal: Tidak boleh mengajukan izin untuk tanggal yang sudah lewat (backdate)
+        if (Carbon::parse($request->start_date, 'Asia/Jakarta')->startOfDay()->lt(Carbon::today('Asia/Jakarta'))) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Pengajuan izin tidak dapat dilakukan untuk tanggal yang sudah lewat. Izin harus diajukan untuk hari ini atau tanggal mendatang.'
+            ], 422);
+        }
+
+        // 2. Batas waktu pengisian izin di hari H
+        $leaveType = $request->leave_type ?? 'full_day';
+        if ($request->start_date === $today) {
+            if ($leaveType === 'full_day') {
+                // Batas pengisian izin seharian penuh maksimal pukul 12:00 WIB
+                if ($now->format('H:i') > '12:00') {
+                    return response()->json([
+                        'status'  => 'error',
+                        'message' => 'Batas waktu pengisian izin seharian penuh untuk hari ini telah berakhir (maksimal pukul 12:00 WIB). Silakan hubungi Wali Kelas atau Guru BK untuk konfirmasi.'
+                    ], 422);
+                }
+            } elseif ($leaveType === 'partial') {
+                $endTimeFormatted = strlen($request->end_time) === 5 ? $request->end_time . ':00' : $request->end_time;
+                if ($endTimeFormatted <= $now->format('H:i:s')) {
+                    return response()->json([
+                        'status'  => 'error',
+                        'message' => 'Jam selesai izin yang Anda pilih (' . substr($request->end_time, 0, 5) . ') sudah terlewat untuk hari ini.'
+                    ], 422);
+                }
+            }
+        }
+
+        // 3. Batasi pengajuan maksimal 1 kali dalam 1 hari per siswa (membatasi jumlah antrean approval di wali kelas)
         $alreadySubmittedToday = LeaveRequest::where('student_id', $targetStudentId)
             ->whereDate('created_at', $today)
             ->whereIn('status', ['pending', 'approved'])
@@ -44,7 +75,7 @@ class LeaveRequestController extends Controller
             ], 422);
         }
 
-        // 2. Cegah pengajuan ganda pada rentang tanggal yang saling bertumpuk (overlapping)
+        // 4. Cegah pengajuan ganda pada rentang tanggal yang saling bertumpuk (overlapping)
         $overlappingLeave = LeaveRequest::where('student_id', $targetStudentId)
             ->whereIn('status', ['pending', 'approved'])
             ->where(function ($query) use ($request) {
@@ -71,11 +102,6 @@ class LeaveRequestController extends Controller
         // Simpan file foto/surat ke folder public/storage/leaves
         $path = $request->file('proof_file')->store('leaves', 'public');
 
-        $leaveType = $request->leave_type ?? 'full_day';
-
-        $user = Auth::user();
-        $targetStudentId = ($user->role === 'orang_tua' && $user->student_id) ? $user->student_id : $user->id;
-
         $reason = trim($request->reason);
         if ($user->role === 'orang_tua') {
             $reason = '[Diajukan Orang Tua] ' . $reason;
@@ -101,7 +127,7 @@ class LeaveRequestController extends Controller
         ]);
     }
 
-        // 2. (WALI KELAS / BK) Melihat daftar izin yang masih 'pending'
+    // 2. (WALI KELAS / BK) Melihat daftar izin yang masih 'pending'
     public function indexPending()
     {
         $user = Auth::user();
@@ -109,8 +135,13 @@ class LeaveRequestController extends Controller
         // Ambil data izin pending beserta data siswa dan kelasnya
         $query = LeaveRequest::with(['student.schoolClass'])->where('status', 'pending');
 
-        // Cari kelas binaan (jika ada)
+        // Cari kelas binaan (jika ada) secara fleksibel
         $homeroomClass = \App\Models\SchoolClass::where('homeroom_teacher_id', $user->id)->first();
+        if (!$homeroomClass) {
+            $homeroomClass = \App\Models\SchoolClass::whereHas('homeroomTeacher', function($t) use ($user) {
+                $t->where('name', $user->name)->orWhere('username', $user->username);
+            })->first();
+        }
 
         // Jika login sebagai WALI KELAS atau memiliki kelas binaan: Hanya ambil izin murid di kelas binaannya saja
         if ($user->role === 'wali_kelas' || $homeroomClass) {
@@ -129,6 +160,9 @@ class LeaveRequestController extends Controller
                     $q->whereIn('class_id', $assignedClassIds);
                 });
             }
+        } elseif ($user->role === 'guru') {
+            // Guru biasa tanpa kelas binaan tidak memverifikasi izin
+            return response()->json(['status' => 'success', 'data' => []]);
         }
 
         $leaves = $query->orderBy('created_at', 'desc')->get();
@@ -144,8 +178,13 @@ class LeaveRequestController extends Controller
     {
         $user = Auth::user();
 
-        // Cari kelas yang dibina wali kelas ini
+        // Cari kelas yang dibina wali kelas ini secara fleksibel
         $homeroomClass = \App\Models\SchoolClass::where('homeroom_teacher_id', $user->id)->first();
+        if (!$homeroomClass) {
+            $homeroomClass = \App\Models\SchoolClass::whereHas('homeroomTeacher', function($t) use ($user) {
+                $t->where('name', $user->name)->orWhere('username', $user->username);
+            })->first();
+        }
 
         // Aturan: Hanya Wali Kelas yang memiliki hak akses untuk menyetujui / menolak izin
         if ($user->role !== 'wali_kelas' && !$homeroomClass) {

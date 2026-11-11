@@ -42,7 +42,16 @@ class CheckRole
         }
 
         // 3. Cek apakah role pengguna ada di daftar role yang diizinkan
-        if (!in_array($user->role, $allowedRoles)) {
+        // Guru yang ditugaskan sebagai Wali Kelas atau Guru BK di tabel classes otomatis memiliki kapabilitas terkait
+        $userRoles = [$user->role];
+        if (\App\Models\SchoolClass::where('homeroom_teacher_id', $user->id)->exists()) {
+            $userRoles[] = 'wali_kelas';
+        }
+        if (\App\Models\SchoolClass::where('bk_teacher_id', $user->id)->exists()) {
+            $userRoles[] = 'guru_bk';
+        }
+
+        if (empty(array_intersect($userRoles, $allowedRoles))) {
             if ($request->expectsJson() || $request->is('api/*')) {
                 return response()->json([
                     'status'  => 'error',

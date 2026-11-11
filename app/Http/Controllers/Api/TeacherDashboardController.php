@@ -52,8 +52,15 @@ class TeacherDashboardController extends Controller
             ? ['putaran_2', '2', 'Putaran 2', 'PUTARAN 2', 'PUT 2']
             : ['putaran_1', '1', 'Putaran 1', 'PUTARAN 1', 'PUT 1'];
 
-        // Cek status Wali Kelas jika ada
+        // Cek status Wali Kelas jika ada secara fleksibel
         $homeroomClass = SchoolClass::where('homeroom_teacher_id', $user->id)->first();
+        if (!$homeroomClass) {
+            $homeroomClass = SchoolClass::whereHas('homeroomTeacher', function ($t) use ($user) {
+                $t->where('name', $user->name)->orWhere('username', $user->username);
+            })->first();
+        }
+        $isWaliKelas = ($user->role === 'wali_kelas' || $homeroomClass !== null);
+
         $roleSubtitle = $homeroomClass 
             ? "Guru Pengajar & Wali Kelas {$homeroomClass->name}"
             : ($user->role === 'wali_kelas' ? "Guru Pengajar & Wali Kelas" : "Guru Pengajar");
@@ -82,6 +89,7 @@ class TeacherDashboardController extends Controller
         $totalSessions = $myActiveSchedulesToday->count();
         $totalHours = 0;
         $scheduleItems = [];
+        $todayDate = $now->toDateString();
 
         if ($hasScheduleToday) {
             foreach ($myActiveSchedulesToday as $index => $sched) {
@@ -101,27 +109,105 @@ class TeacherDashboardController extends Controller
                 $timeRange = substr($sched->start_time, 0, 5) . ' - ' . substr($sched->end_time, 0, 5);
                 $isMyTeaching = ($sched->teacher_id == $user->id);
 
-                $todayDate = $now->toDateString();
-                $hasJournal = \App\Models\Journal::where('schedule_id', $sched->id)
+                $existingJournal = \App\Models\Journal::where('schedule_id', $sched->id)
                     ->where('date', $todayDate)
-                    ->exists();
+                    ->first();
+                $hasJournal = ($existingJournal !== null);
+
+                // --- DETAIL PRESENSI SISWA SESI INI (HADIR / IZIN / SAKIT / ALPA) ---
+                $classStudents = \App\Models\User::where('role', 'siswa')
+                    ->where('class_id', $sched->class_id)
+                    ->orderBy('name', 'asc')
+                    ->get();
+                $totalClassStudents = $classStudents->count();
+
+                if ($existingJournal) {
+                    $atts = \App\Models\Attendance::where('journal_id', $existingJournal->id)
+                        ->with('student:id,name,identifier')
+                        ->get();
+                    $hadirCount = $atts->where('status', 'hadir')->count();
+                    $izinCount  = $atts->where('status', 'izin')->count();
+                    $sakitCount = $atts->where('status', 'sakit')->count();
+                    $alfaCount  = $atts->where('status', 'alfa')->count();
+                    $studentAttList = $atts->map(function ($a) {
+                        return [
+                            'id'         => $a->student_id,
+                            'name'       => $a->student->name ?? 'Siswa',
+                            'identifier' => $a->student->identifier ?? '-',
+                            'status'     => $a->status,
+                        ];
+                    })->values();
+                } else {
+                    // Proyeksi presensi sesi hari ini berdasarkan siswa dengan approved leave
+                    $schedStart = $sched->start_time ?? '00:00:00';
+                    $schedEnd   = $sched->end_time   ?? '23:59:59';
+                    $approvedLeaves = \App\Models\LeaveRequest::where('status', 'approved')
+                        ->where('start_date', '<=', $todayDate)
+                        ->where('end_date', '>=', $todayDate)
+                        ->whereIn('student_id', $classStudents->pluck('id'))
+                        ->get()
+                        ->keyBy('student_id');
+
+                    $hadirCount = 0; $izinCount = 0; $sakitCount = 0; $alfaCount = 0;
+                    $studentAttList = [];
+                    foreach ($classStudents as $cs) {
+                        $st = 'hadir';
+                        $leaveReason = null;
+                        $hasL = $approvedLeaves->get($cs->id);
+                        if ($hasL) {
+                            $isOverlapping = true;
+                            if ($hasL->leave_type === 'partial' && $hasL->start_time && $hasL->end_time) {
+                                if ($hasL->start_time >= $schedEnd || $hasL->end_time <= $schedStart) {
+                                    $isOverlapping = false;
+                                }
+                            }
+                            if ($isOverlapping) {
+                                $st = stripos($hasL->reason, 'sakit') !== false ? 'sakit' : 'izin';
+                                $leaveReason = $hasL->reason;
+                            }
+                        }
+
+                        if ($st === 'hadir') $hadirCount++;
+                        elseif ($st === 'izin') $izinCount++;
+                        elseif ($st === 'sakit') $sakitCount++;
+
+                        $studentAttList[] = [
+                            'id'           => $cs->id,
+                            'name'         => $cs->name,
+                            'identifier'   => $cs->identifier ?? '-',
+                            'status'       => $st,
+                            'leave_reason' => $leaveReason,
+                        ];
+                    }
+                }
+
+                $attendanceSummary = [
+                    'total'    => $totalClassStudents,
+                    'hadir'    => $hadirCount,
+                    'izin'     => $izinCount,
+                    'sakit'    => $sakitCount,
+                    'alfa'     => $alfaCount,
+                    'students' => $studentAttList,
+                ];
 
                 $scheduleItems[] = [
-                    'id'             => $sched->id,
-                    'subject'        => $sched->subject,
-                    'class_name'     => $sched->schoolClass->name ?? '-',
-                    'room_name'      => $sched->room->name ?? 'Ruang Kelas',
-                    'teacher_name'   => $sched->teacher->name ?? 'Guru Pengajar',
-                    'is_my_teaching' => true,
-                    'type_badge'     => 'Mengajar',
-                    'day'            => $sched->day,
-                    'cycle'          => $sched->cycle,
-                    'start_time'     => substr($sched->start_time, 0, 5),
-                    'end_time'       => substr($sched->end_time, 0, 5),
-                    'time_range'     => $timeRange,
-                    'status'         => $hasJournal ? 'Jurnal Selesai' : $status,
-                    'has_journal'    => $hasJournal,
-                    'journal_status' => $hasJournal ? 'Selesai Diisi' : 'Belum Diisi',
+                    'id'                 => $sched->id,
+                    'subject'            => $sched->subject,
+                    'class_name'         => $sched->schoolClass->name ?? '-',
+                    'class_id'           => $sched->class_id,
+                    'room_name'          => $sched->room->name ?? 'Ruang Kelas',
+                    'teacher_name'       => $sched->teacher->name ?? 'Guru Pengajar',
+                    'is_my_teaching'     => true,
+                    'type_badge'         => 'Mengajar',
+                    'day'                => $sched->day,
+                    'cycle'              => $sched->cycle,
+                    'start_time'         => substr($sched->start_time, 0, 5),
+                    'end_time'           => substr($sched->end_time, 0, 5),
+                    'time_range'         => $timeRange,
+                    'status'             => $hasJournal ? 'Jurnal Selesai' : $status,
+                    'has_journal'        => $hasJournal,
+                    'journal_status'     => $hasJournal ? 'Selesai Diisi' : 'Belum Diisi',
+                    'attendance_summary' => $attendanceSummary,
                 ];
             }
         }
@@ -228,19 +314,97 @@ class TeacherDashboardController extends Controller
             }
         }
 
-        // Hitung pending leave requests
-        $pendingLeavesCount = LeaveRequest::where('status', 'pending')->count();
+        // Hitung pending leave requests secara tepat per peran
+        if ($isWaliKelas && $homeroomClass) {
+            $pendingLeavesCount = LeaveRequest::where('status', 'pending')
+                ->whereHas('student', fn($q) => $q->where('class_id', $homeroomClass->id))
+                ->count();
+        } elseif ($user->role === 'guru_bk') {
+            $bkClassIds = SchoolClass::where('bk_teacher_id', $user->id)->pluck('id')->toArray();
+            if (!empty($bkClassIds)) {
+                $pendingLeavesCount = LeaveRequest::where('status', 'pending')
+                    ->whereHas('student', fn($q) => $q->whereIn('class_id', $bkClassIds))
+                    ->count();
+            } else {
+                $pendingLeavesCount = LeaveRequest::where('status', 'pending')->count();
+            }
+        } elseif ($user->role === 'waka_kurikulum') {
+            $pendingLeavesCount = LeaveRequest::where('status', 'pending')->count();
+        } else {
+            $pendingLeavesCount = 0;
+        }
+
+        // Hitung presensi kelas binaan untuk Wali Kelas
+        $homeroomAttendance = null;
+        if ($homeroomClass) {
+            $hrStudents = \App\Models\User::where('role', 'siswa')
+                ->where('class_id', $homeroomClass->id)
+                ->orderBy('name', 'asc')
+                ->get();
+            $hrTotal = $hrStudents->count();
+
+            $hrLeaves = \App\Models\LeaveRequest::where('status', 'approved')
+                ->where('start_date', '<=', $todayDate)
+                ->where('end_date', '>=', $todayDate)
+                ->whereIn('student_id', $hrStudents->pluck('id'))
+                ->get()
+                ->keyBy('student_id');
+
+            $hrHadir = 0; $hrIzin = 0; $hrSakit = 0; $hrAlfa = 0;
+            $hrStudentList = [];
+            $hrAbsentList = [];
+
+            foreach ($hrStudents as $hs) {
+                $st = 'hadir';
+                $reason = null;
+                $hasL = $hrLeaves->get($hs->id);
+                if ($hasL) {
+                    $st = stripos($hasL->reason, 'sakit') !== false ? 'sakit' : 'izin';
+                    $reason = $hasL->reason;
+                }
+
+                if ($st === 'hadir') $hrHadir++;
+                elseif ($st === 'izin') $hrIzin++;
+                elseif ($st === 'sakit') $hrSakit++;
+
+                $item = [
+                    'id'         => $hs->id,
+                    'name'       => $hs->name,
+                    'identifier' => $hs->identifier ?? '-',
+                    'status'     => $st,
+                    'reason'     => $reason,
+                ];
+                $hrStudentList[] = $item;
+                if ($st !== 'hadir') {
+                    $hrAbsentList[] = $item;
+                }
+            }
+
+            $homeroomAttendance = [
+                'class_id'        => $homeroomClass->id,
+                'class_name'      => $homeroomClass->name,
+                'total'           => $hrTotal,
+                'hadir'           => $hrHadir,
+                'izin'            => $hrIzin,
+                'sakit'           => $hrSakit,
+                'alfa'            => $hrAlfa,
+                'absent_students' => $hrAbsentList,
+                'students'        => $hrStudentList,
+            ];
+        }
 
         return response()->json([
             'status' => 'success',
             'data' => [
                 'user' => [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                    'role' => $user->role,
-                    'identifier' => $user->identifier ?? '-',
-                    'role_subtitle' => $roleSubtitle,
-                    'homeroom_class' => $homeroomClass ? $homeroomClass->name : null,
+                    'id'                => $user->id,
+                    'name'              => $user->name,
+                    'role'              => $user->role,
+                    'is_wali_kelas'     => $isWaliKelas,
+                    'identifier'        => $user->identifier ?? '-',
+                    'role_subtitle'     => $roleSubtitle,
+                    'homeroom_class'    => $homeroomClass ? $homeroomClass->name : null,
+                    'homeroom_class_id' => $homeroomClass ? $homeroomClass->id : null,
                 ],
                 'cycle' => [
                     'key' => $activeCycle,
@@ -255,6 +419,7 @@ class TeacherDashboardController extends Controller
                     ? "Jurnal Aktif: Anda memiliki {$totalSessions} sesi mengajar hari ini." 
                     : "Jurnal Nonaktif: Tidak ada jadwal mengajar pada hari {$currentDay}.",
                 'pending_leaves_count' => $pendingLeavesCount,
+                'homeroom_attendance'  => $homeroomAttendance,
                 'total_sessions_today' => $totalSessions,
                 'total_hours_today' => $totalHours,
                 'schedules_today' => $scheduleItems,

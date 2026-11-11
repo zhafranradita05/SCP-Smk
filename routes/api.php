@@ -50,7 +50,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // --- API WALI KELAS / BK / WAKA (Verifikasi Izin & Rekap) ---
-    Route::middleware('role:wali_kelas,guru_bk,waka_kurikulum')->group(function () {
+    Route::middleware('role:guru,wali_kelas,guru_bk,waka_kurikulum')->group(function () {
         Route::get('/leaves/pending', [LeaveRequestController::class, 'indexPending']);
         Route::post('/leaves/{id}/approve', [LeaveRequestController::class, 'approve']);
         Route::post('/leaves/{id}/reject', [LeaveRequestController::class, 'reject']);

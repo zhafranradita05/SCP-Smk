@@ -134,22 +134,25 @@ class StudentDashboardController extends Controller
         $pendingCount  = LeaveRequest::where('student_id', $targetStudentId)->where('status', 'pending')->count();
         $rejectedCount = LeaveRequest::where('student_id', $targetStudentId)->where('status', 'rejected')->count();
 
-        // 5 data pengajuan izin terakhir siswa (untuk dipantau langsung oleh Orang Tua)
+        // 5 data pengajuan izin terakhir siswa (untuk dipantau langsung oleh Siswa & Orang Tua)
         $recentLeaves = LeaveRequest::where('student_id', $targetStudentId)
+            ->with('verifier:id,name')
             ->orderBy('created_at', 'desc')
-            ->limit(5)
+            ->limit(10)
             ->get()
             ->map(function ($l) {
                 return [
-                    'id'          => $l->id,
-                    'start_date'  => $l->start_date,
-                    'end_date'    => $l->end_date,
-                    'reason'      => $l->reason,
-                    'status'      => $l->status,
-                    'leave_type'  => $l->leave_type,
-                    'start_time'  => $l->start_time ? substr($l->start_time, 0, 5) : null,
-                    'end_time'    => $l->end_time ? substr($l->end_time, 0, 5) : null,
-                    'created_at'  => $l->created_at ? $l->created_at->format('d M Y H:i') : null,
+                    'id'            => $l->id,
+                    'start_date'    => $l->start_date,
+                    'end_date'      => $l->end_date,
+                    'reason'        => $l->reason,
+                    'status'        => $l->status,
+                    'leave_type'    => $l->leave_type,
+                    'start_time'    => $l->start_time ? substr($l->start_time, 0, 5) : null,
+                    'end_time'      => $l->end_time ? substr($l->end_time, 0, 5) : null,
+                    'proof_file'    => $l->proof_file,
+                    'verifier_name' => $l->verifier->name ?? null,
+                    'created_at'    => $l->created_at ? $l->created_at->format('d M Y H:i') : null,
                 ];
             });
 
