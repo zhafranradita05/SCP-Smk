@@ -165,10 +165,9 @@ Route::middleware(['auth', 'role:waka_kurikulum', 'active.session'])->group(func
     Route::get('/waka/users/template/guru', [UserController::class, 'downloadTeacherTemplate'])->name('waka.users.template.guru');
     Route::post('/waka/users/import/guru', [UserController::class, 'importTeachers'])->name('waka.users.import.guru');
 
-    // Kenaikan Kelas & Kelulusan Siswa
+    // Kenaikan Kelas & Kelulusan Siswa (Massal Serentak Seluruh Sekolah)
     Route::get('/waka/promotions', [PromotionController::class, 'index'])->name('waka.promotions.index');
     Route::get('/waka/promotions/export-alumni', [PromotionController::class, 'exportAlumni'])->name('waka.promotions.export_alumni');
-    Route::post('/waka/promotions/process', [PromotionController::class, 'process'])->name('waka.promotions.process');
     Route::post('/waka/promotions/bulk', [PromotionController::class, 'bulkProcess'])->name('waka.promotions.bulk');
     Route::post('/waka/promotions/{id}/restore', [PromotionController::class, 'restoreAlumni'])->name('waka.promotions.restore');
 

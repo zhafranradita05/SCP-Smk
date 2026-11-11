@@ -121,7 +121,7 @@
             <!-- Tombol Cepat Kenaikan & Kelulusan -->
             <a href="{{ route('waka.promotions.index') }}" class="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition flex-shrink-0">
                 <span>🎓 Kenaikan & Kelulusan</span>
-                <span class="text-[9px] px-1 py-0.2 rounded bg-emerald-200/80 text-emerald-900">Opsi 1</span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-bold">Massal</span>
             </a>
         </div>
     @endif
