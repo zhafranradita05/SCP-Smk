@@ -135,7 +135,7 @@
                 <!-- Filter Peran Pengguna -->
                 <div>
                     <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Peran Akun</label>
-                    <select name="role" onchange="this.form.submit()" class="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none">
+                    <select name="role" onchange="const t = this.form.querySelector('input[name=tingkat]'); if (t) t.value='all'; this.form.submit()" class="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none">
                         <option value="all" {{ (!$roleFilter || $roleFilter === 'all') ? 'selected' : '' }}>Semua Pengguna</option>
                         <option value="siswa" {{ $roleFilter === 'siswa' ? 'selected' : '' }}>Data Siswa</option>
                         <option value="orang_tua" {{ $roleFilter === 'orang_tua' ? 'selected' : '' }}>Data Orang Tua</option>
@@ -158,22 +158,8 @@
                 @endif
 
                 @if(!$roleFilter || $roleFilter === 'siswa' || $roleFilter === 'guru' || $roleFilter === 'orang_tua')
-                    <!-- Filter Tingkat Kelas -->
-                    <div>
-                        <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tingkat Kelas</label>
-                        <select name="tingkat" onchange="this.form.submit()" class="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none">
-                            <option value="all" {{ ($tingkat ?? 'all') == 'all' ? 'selected' : '' }}>Semua Tingkat</option>
-                            <option value="X" {{ ($tingkat ?? '') == 'X' ? 'selected' : '' }}>Kelas X</option>
-                            <option value="XI" {{ ($tingkat ?? '') == 'XI' ? 'selected' : '' }}>Kelas XI</option>
-                            <option value="XII" {{ ($tingkat ?? '') == 'XII' ? 'selected' : '' }}>Kelas XII</option>
-                            <option value="none" {{ ($tingkat ?? '') == 'none' ? 'selected' : '' }}>
-                                {{ $roleFilter === 'guru' ? '⚠️ Bukan Wali / Belum Ditugaskan' : '⚠️ Belum Ada Kelas' }}
-                            </option>
-                            @if(!$roleFilter || $roleFilter === 'siswa' || $roleFilter === 'orang_tua')
-                                <option value="alumni" {{ ($tingkat ?? '') == 'alumni' ? 'selected' : '' }}>🎓 Alumni / Lulus</option>
-                            @endif
-                        </select>
-                    </div>
+                    <!-- Parameter Tingkat Kelas (Tersinkron dengan Tab Navigasi Angkatan di Atas) -->
+                    <input type="hidden" name="tingkat" value="{{ $tingkat ?? 'all' }}">
 
                     <!-- Filter Jurusan -->
                     <div>
