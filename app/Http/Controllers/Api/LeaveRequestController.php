@@ -303,41 +303,68 @@ class LeaveRequestController extends Controller
         $isBK = $user->role === 'guru_bk';
 
         $allClasses = \App\Models\SchoolClass::orderBy('name')->get(['id', 'name']);
-        $availableClasses = $allClasses;
+        $availableClasses = collect();
 
-        if ($isBK) {
-            // Ambil daftar kelas binaan khusus Guru BK ini jika ada
-            $bkClasses = \App\Models\SchoolClass::where('bk_teacher_id', $user->id)->orderBy('name')->get(['id', 'name']);
-            if ($bkClasses->isNotEmpty()) {
-                $availableClasses = $bkClasses;
-            }
+        // 1. Cek kelas binaan wali kelas
+        $homeroomClass = \App\Models\SchoolClass::where('homeroom_teacher_id', $user->id)->first();
+        if (!$homeroomClass) {
+            $homeroomClass = \App\Models\SchoolClass::whereHas('homeroomTeacher', function ($t) use ($user) {
+                $t->where('name', $user->name)->orWhere('username', $user->username);
+            })->first();
+        }
+        $isWaliKelas = ($user->role === 'wali_kelas' || $homeroomClass !== null);
 
-            // Guru BK dapat memilih kelas via query ?class_id=... atau default ke kelas binaan pertamanya
-            $selectedClassId = $request->query('class_id');
-            if ($selectedClassId) {
-                $schoolClass = \App\Models\SchoolClass::find($selectedClassId);
-            } else {
-                $schoolClass = $availableClasses->first();
-            }
+        // 2. Cek kelas binaan BK
+        $bkClasses = \App\Models\SchoolClass::where('bk_teacher_id', $user->id)->orderBy('name')->get(['id', 'name']);
+        if ($bkClasses->isEmpty()) {
+            $bkClasses = \App\Models\SchoolClass::whereHas('bkTeacher', function ($t) use ($user) {
+                $t->where('name', $user->name)->orWhere('username', $user->username);
+            })->get(['id', 'name']);
+        }
 
-            if (!$schoolClass) {
-                return response()->json([
-                    'status'  => 'error',
-                    'message' => 'Belum ada data kelas yang ditugaskan kepada Anda.',
-                    'data'    => null
-                ], 404);
+        // 3. Cek kelas yang diajar oleh guru ini (sebagai guru pengampu/mapel)
+        $teachingClassIds = \App\Models\Schedule::where('teacher_id', $user->id)
+            ->orWhere('teacher_name', $user->name)
+            ->pluck('school_class_id')
+            ->filter()
+            ->unique();
+        $teachingClasses = \App\Models\SchoolClass::whereIn('id', $teachingClassIds)->orderBy('name')->get(['id', 'name']);
+
+        // Kumpulkan kelas yang relevan
+        if ($homeroomClass) {
+            $availableClasses->push($homeroomClass);
+        }
+        foreach ($bkClasses as $bc) {
+            if (!$availableClasses->contains('id', $bc->id)) {
+                $availableClasses->push($bc);
             }
+        }
+        foreach ($teachingClasses as $tc) {
+            if (!$availableClasses->contains('id', $tc->id)) {
+                $availableClasses->push($tc);
+            }
+        }
+
+        // Jika Guru BK, Waka Kurikulum, atau belum ada jadwal terhubung, berikan opsi semua kelas
+        if ($isBK || $user->role === 'waka_kurikulum' || $availableClasses->isEmpty()) {
+            $availableClasses = $allClasses;
+        }
+
+        // Tentukan kelas yang dipilih
+        $selectedClassId = $request->query('class_id');
+        if ($selectedClassId) {
+            $schoolClass = \App\Models\SchoolClass::find($selectedClassId);
         } else {
-            // Wali Kelas: Khusus kelas binaannya sendiri
-            $schoolClass = \App\Models\SchoolClass::where('homeroom_teacher_id', $user->id)->first();
+            // Prioritas default: kelas binaan wali kelas -> kelas pertama yang diajar -> kelas pertama yang ada
+            $schoolClass = $homeroomClass ?: $availableClasses->first();
+        }
 
-            if (!$schoolClass) {
-                return response()->json([
-                    'status'  => 'error',
-                    'message' => 'Anda belum ditugaskan sebagai Wali Kelas pada kelas manapun.',
-                    'data'    => null
-                ], 404);
-            }
+        if (!$schoolClass) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Belum ada data kelas yang dapat diakses.',
+                'data'    => null
+            ], 404);
         }
 
         // 2. Ambil semester & tahun ajaran aktif dari setting
@@ -345,7 +372,18 @@ class LeaveRequestController extends Controller
         $academicYear = $setting->academic_year ?? '2026/2027';
         $semester = $setting->active_semester ?? 'ganjil';
 
-        // 3. Ambil data siswa pada kelas terpilih
+        // 3. Ambil data sesi mengajar jurnal guru ini pada kelas terpilih (jika ada)
+        $teacherJournalIds = \App\Models\Journal::where('teacher_id', $user->id)
+            ->whereHas('schedule', function ($q) use ($schoolClass) {
+                $q->where('school_class_id', $schoolClass->id);
+            })
+            ->pluck('id');
+        $hasTeacherSubjectData = $teacherJournalIds->isNotEmpty();
+        $allSubjectAttendances = $hasTeacherSubjectData
+            ? \App\Models\Attendance::whereIn('journal_id', $teacherJournalIds)->get()->groupBy('student_id')
+            : collect();
+
+        // 4. Ambil data siswa pada kelas terpilih
         $students = \App\Models\User::where('role', 'siswa')
             ->where('class_id', $schoolClass->id)
             ->get();
@@ -425,33 +463,55 @@ class LeaveRequestController extends Controller
                 }
             }
 
+            // Kehadiran khusus di jam mata pelajaran guru ini
+            $subjectAttendance = [
+                'has_data'       => $hasTeacherSubjectData,
+                'total_sessions' => $hasTeacherSubjectData ? $teacherJournalIds->count() : 0,
+                'hadir'          => 0,
+                'izin'           => 0,
+                'sakit'          => 0,
+                'alfa'           => 0,
+            ];
+            if ($hasTeacherSubjectData && isset($allSubjectAttendances[$student->id])) {
+                $sAtts = $allSubjectAttendances[$student->id];
+                $subjectAttendance['hadir'] = $sAtts->where('status', 'hadir')->count();
+                $subjectAttendance['izin']  = $sAtts->where('status', 'izin')->count();
+                $subjectAttendance['sakit'] = $sAtts->where('status', 'sakit')->count();
+                $subjectAttendance['alfa']  = $sAtts->where('status', 'alfa')->count();
+            }
+
             $studentRecaps[] = [
-                'id'                => $student->id,
-                'name'              => $student->name,
-                'identifier'        => $student->identifier ?? '-',
-                'sakit_days'        => $sakitDays,
-                'izin_days'         => $izinDays,
-                'total_days'        => $totalDays,
-                'needs_attention'   => $needsAttention,
-                'recap_description' => $recapDescription,
-                'latest_leave'      => $latestLeave,
-                'history'           => $history,
+                'id'                 => $student->id,
+                'name'               => $student->name,
+                'identifier'         => $student->identifier ?? '-',
+                'sakit_days'         => $sakitDays,
+                'izin_days'          => $izinDays,
+                'total_days'         => $totalDays,
+                'needs_attention'    => $needsAttention,
+                'recap_description'  => $recapDescription,
+                'latest_leave'       => $latestLeave,
+                'subject_attendance' => $subjectAttendance,
+                'history'            => $history,
             ];
         }
 
         return response()->json([
             'status' => 'success',
             'data'   => [
-                'class_id'              => $schoolClass->id,
-                'class_name'            => $schoolClass->name,
-                'is_bk'                 => $isBK,
-                'all_classes'           => $isBK ? $availableClasses : $allClasses,
-                'semester'              => 'Semester ' . ucfirst($semester),
-                'academic_year'         => $academicYear,
-                'total_sakit'           => $totalSakit,
-                'total_izin'            => $totalIzin,
-                'needs_attention_count' => $needsAttentionCount,
-                'students'              => $studentRecaps,
+                'class_id'               => $schoolClass->id,
+                'class_name'             => $schoolClass->name,
+                'is_bk'                  => $isBK,
+                'is_wali_kelas'          => $isWaliKelas,
+                'is_homeroom_of_class'   => ($homeroomClass && $homeroomClass->id === $schoolClass->id),
+                'has_subject_data'       => $hasTeacherSubjectData,
+                'subject_sessions_count' => $teacherJournalIds->count(),
+                'all_classes'            => $availableClasses->values(),
+                'semester'               => 'Semester ' . ucfirst($semester),
+                'academic_year'          => $academicYear,
+                'total_sakit'            => $totalSakit,
+                'total_izin'             => $totalIzin,
+                'needs_attention_count'  => $needsAttentionCount,
+                'students'               => $studentRecaps,
             ]
         ]);
     }
