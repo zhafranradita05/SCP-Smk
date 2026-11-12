@@ -498,6 +498,73 @@ class LeaveRequestController extends Controller
             ];
         }
 
+        // 5. Susun Rekapitulasi Izin Siswa Per Harian (Daily Breakdown)
+        $studentIds = $students->pluck('id');
+        $allClassLeaves = LeaveRequest::whereIn('student_id', $studentIds)
+            ->where('status', 'approved')
+            ->with('student:id,name,identifier')
+            ->orderBy('start_date', 'desc')
+            ->get();
+
+        $dailyMap = [];
+        foreach ($allClassLeaves as $leave) {
+            $cur = \Carbon\Carbon::parse($leave->start_date);
+            $end = \Carbon\Carbon::parse($leave->end_date);
+            $diff = $cur->diffInDays($end);
+            $maxDays = min($diff, 30);
+
+            for ($i = 0; $i <= $maxDays; $i++) {
+                $checkDate = $cur->copy()->addDays($i);
+                if ($checkDate->isSunday()) {
+                    continue;
+                }
+                $dateKey = $checkDate->format('Y-m-d');
+                if (!isset($dailyMap[$dateKey])) {
+                    $dailyMap[$dateKey] = [
+                        'date'           => $dateKey,
+                        'date_formatted' => $checkDate->translatedFormat('l, d F Y'),
+                        'day_name'       => $checkDate->translatedFormat('l'),
+                        'total_students' => 0,
+                        'total_sakit'    => 0,
+                        'total_izin'     => 0,
+                        'records'        => [],
+                    ];
+                }
+
+                $isSakit = stripos($leave->reason, 'sakit') !== false;
+                if ($isSakit) {
+                    $dailyMap[$dateKey]['total_sakit']++;
+                } else {
+                    $dailyMap[$dateKey]['total_izin']++;
+                }
+                $dailyMap[$dateKey]['total_students']++;
+
+                $startTimeStr = $leave->start_time ? substr($leave->start_time, 0, 5) : null;
+                $endTimeStr   = $leave->end_time ? substr($leave->end_time, 0, 5) : null;
+                $isPartial    = $leave->leave_type === 'partial';
+
+                $dailyMap[$dateKey]['records'][] = [
+                    'id'           => $leave->id,
+                    'student_id'   => $leave->student_id,
+                    'student_name' => $leave->student ? $leave->student->name : 'Siswa',
+                    'identifier'   => $leave->student ? ($leave->student->identifier ?? '-') : '-',
+                    'category'     => $isSakit ? 'Sakit' : 'Izin',
+                    'leave_type'   => $leave->leave_type ?? 'full_day',
+                    'start_time'   => $startTimeStr,
+                    'end_time'     => $endTimeStr,
+                    'start_period' => $leave->start_period,
+                    'end_period'   => $leave->end_period,
+                    'reason'       => $leave->reason,
+                    'start_date'   => $leave->start_date,
+                    'end_date'     => $leave->end_date,
+                    'is_partial'   => $isPartial,
+                    'proof_url'    => $leave->proof_file ? asset('storage/' . $leave->proof_file) : null,
+                ];
+            }
+        }
+        krsort($dailyMap);
+        $dailyRecaps = array_values($dailyMap);
+
         return response()->json([
             'status' => 'success',
             'data'   => [
@@ -515,6 +582,7 @@ class LeaveRequestController extends Controller
                 'total_izin'             => $totalIzin,
                 'needs_attention_count'  => $needsAttentionCount,
                 'students'               => $studentRecaps,
+                'daily_recaps'           => $dailyRecaps,
             ]
         ]);
     }
