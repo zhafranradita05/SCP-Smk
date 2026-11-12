@@ -80,10 +80,10 @@ class JournalController extends Controller
     }
 
     /**
-     * Mengambil daftar siswa untuk absensi pada suatu jadwal
-     * Menghitung status default: semua siswa otomatis terdeteksi hadir (is_attended = true),
-     * kecuali siswa yang memiliki izin/sakit yang sudah disetujui untuk hari ini
-     * otomatis uncheck (is_attended = false) dengan status 'izin' atau 'sakit' serta catatan izinnya.
+     * Mengambil daftar siswa untuk absensi pada suatu jadwal.
+     * - Jika jurnal SUDAH ada: kembalikan data attendance AKTUAL dari DB (sinkron).
+     * - Jika jurnal BELUM ada: kembalikan data default dari approved leaves.
+     * Siswa yang memiliki izin approved tidak dapat diubah statusnya (locked_by_leave = true).
      */
     public function getStudentsForAttendance(Request $request, $scheduleId)
     {
@@ -92,22 +92,28 @@ class JournalController extends Controller
 
         if (!$schedule) {
             return response()->json([
-                'status' => 'error',
+                'status'  => 'error',
                 'message' => 'Jadwal pelajaran tidak ditemukan!',
             ], 404);
         }
 
-        // Ambil semua siswa di kelas jadwal ini
+        // Ambil semua siswa di kelas jadwal ini (urut nama)
         $students = \App\Models\User::where('role', 'siswa')
             ->where('class_id', $schedule->class_id)
             ->orderBy('name', 'asc')
             ->get();
 
-        // Cari izin yang sudah di-approve untuk hari ini
-        $today = date('Y-m-d');
+        $today      = date('Y-m-d');
         $schedStart = $schedule->start_time ?? '00:00:00';
         $schedEnd   = $schedule->end_time   ?? '23:59:59';
 
+        // Cek apakah jurnal sudah pernah diisi untuk jadwal ini hari ini
+        $existingJournal = Journal::with('attendances.student')
+            ->where('schedule_id', $schedule->id)
+            ->where('date', $today)
+            ->first();
+
+        // Cari izin approved hari ini untuk siswa di kelas ini (dipakai di kedua cabang)
         $approvedLeaves = LeaveRequest::where('status', 'approved')
             ->where('start_date', '<=', $today)
             ->where('end_date', '>=', $today)
@@ -115,6 +121,84 @@ class JournalController extends Controller
             ->get()
             ->keyBy('student_id');
 
+        if ($existingJournal) {
+            // ============================================================
+            // JURNAL SUDAH ADA → Kembalikan data AKTUAL dari tabel attendances
+            // ============================================================
+            $attendanceMap = $existingJournal->attendances->keyBy('student_id');
+
+            $studentList = $students->map(function ($s) use ($attendanceMap, $approvedLeaves, $schedStart, $schedEnd) {
+                $att = $attendanceMap->get($s->id);
+                $status = $att ? $att->status : 'hadir'; // fallback hadir jika belum ada record
+
+                // Cek apakah siswa punya izin approved yang overlap dengan sesi ini
+                $hasLeave = $approvedLeaves->get($s->id);
+                $isOverlapping = false;
+                $leaveInfo = null;
+
+                if ($hasLeave) {
+                    if ($hasLeave->leave_type === 'partial' && $hasLeave->start_time && $hasLeave->end_time) {
+                        if ($hasLeave->start_time < $schedEnd && $hasLeave->end_time > $schedStart) {
+                            $isOverlapping = true;
+                            $leaveInfo = "Izin Jam (" . substr($hasLeave->start_time, 0, 5) . "-" . substr($hasLeave->end_time, 0, 5) . "): " . $hasLeave->reason;
+                        }
+                    } else {
+                        $isOverlapping = true;
+                        $leaveInfo = "Izin dari Pagi: " . $hasLeave->reason;
+                    }
+                }
+
+                return [
+                    'id'           => $s->id,
+                    'name'         => $s->name,
+                    'identifier'   => $s->identifier ?? '-',
+                    'status'       => $status,
+                    'is_attended'  => ($status === 'hadir'),
+                    'has_leave'    => $isOverlapping,
+                    'leave_info'   => $leaveInfo,
+                    // Status dari DB tidak bisa diubah (jurnal sudah terkunci)
+                    'locked_by_leave' => $isOverlapping,
+                ];
+            });
+
+            $hadirCount = $studentList->where('is_attended', true)->count();
+            $izinCount  = $studentList->where('status', 'izin')->count();
+            $sakitCount = $studentList->where('status', 'sakit')->count();
+            $alfaCount  = $studentList->where('status', 'alfa')->count();
+
+            return response()->json([
+                'status'            => 'success',
+                'is_already_filled' => true,
+                'existing_journal'  => [
+                    'id'            => $existingJournal->id,
+                    'materi'        => $existingJournal->materi,
+                    'photo'         => $existingJournal->photo,
+                    'time_submitted'=> $existingJournal->created_at ? $existingJournal->created_at->format('H:i') : null,
+                ],
+                'schedule' => [
+                    'id'         => $schedule->id,
+                    'class_name' => $schedule->schoolClass->name ?? 'Kelas',
+                    'class_id'   => $schedule->class_id,
+                    'subject'    => $schedule->subject ?? '-',
+                    'time'       => substr($schedule->start_time ?? '', 0, 5) . ' - ' . substr($schedule->end_time ?? '', 0, 5),
+                ],
+                'total_students'      => $studentList->count(),
+                'default_hadir_count' => $hadirCount,
+                'default_izin_count'  => $izinCount + $sakitCount,
+                'attendance_summary'  => [
+                    'hadir' => $hadirCount,
+                    'izin'  => $izinCount,
+                    'sakit' => $sakitCount,
+                    'alfa'  => $alfaCount,
+                    'total' => $studentList->count(),
+                ],
+                'students' => $studentList->values(),
+            ]);
+        }
+
+        // ============================================================
+        // JURNAL BELUM ADA → Kembalikan data DEFAULT dari approved leaves
+        // ============================================================
         $studentList = $students->map(function ($s) use ($approvedLeaves, $schedStart, $schedEnd) {
             $hasLeave = $approvedLeaves->get($s->id);
             $isOverlapping = false;
@@ -138,41 +222,33 @@ class JournalController extends Controller
             }
 
             return [
-                'id' => $s->id,
-                'name' => $s->name,
-                'identifier' => $s->identifier ?? '-',
-                'status' => $status,
-                'is_attended' => ($status === 'hadir'), // Otomatis tercentang hadir jika tidak ada izin
-                'has_leave' => $isOverlapping,
-                'leave_info' => $leaveInfo,
+                'id'              => $s->id,
+                'name'            => $s->name,
+                'identifier'      => $s->identifier ?? '-',
+                'status'          => $status,
+                'is_attended'     => ($status === 'hadir'),
+                'has_leave'       => $isOverlapping,
+                'leave_info'      => $leaveInfo,
+                // Siswa dengan izin approved dikunci, guru tidak bisa mengubah statusnya
+                'locked_by_leave' => $isOverlapping,
             ];
         });
 
-        // Cek apakah jurnal sudah pernah diisi untuk jadwal ini hari ini
-        $existingJournal = Journal::where('schedule_id', $schedule->id)
-            ->where('date', $today)
-            ->first();
-
         return response()->json([
-            'status' => 'success',
-            'is_already_filled' => ($existingJournal !== null),
-            'existing_journal' => $existingJournal ? [
-                'id' => $existingJournal->id,
-                'materi' => $existingJournal->materi,
-                'photo' => $existingJournal->photo,
-                'time_submitted' => $existingJournal->created_at ? $existingJournal->created_at->format('H:i') : null,
-            ] : null,
+            'status'              => 'success',
+            'is_already_filled'   => false,
+            'existing_journal'    => null,
             'schedule' => [
-                'id' => $schedule->id,
+                'id'         => $schedule->id,
                 'class_name' => $schedule->schoolClass->name ?? 'Kelas',
-                'class_id' => $schedule->class_id,
-                'subject' => $schedule->subject ?? '-',
-                'time' => substr($schedule->start_time ?? '', 0, 5) . ' - ' . substr($schedule->end_time ?? '', 0, 5),
+                'class_id'   => $schedule->class_id,
+                'subject'    => $schedule->subject ?? '-',
+                'time'       => substr($schedule->start_time ?? '', 0, 5) . ' - ' . substr($schedule->end_time ?? '', 0, 5),
             ],
-            'total_students' => $studentList->count(),
+            'total_students'      => $studentList->count(),
             'default_hadir_count' => $studentList->where('is_attended', true)->count(),
-            'default_izin_count' => $studentList->where('is_attended', false)->count(),
-            'students' => $studentList->values(),
+            'default_izin_count'  => $studentList->where('is_attended', false)->count(),
+            'students'            => $studentList->values(),
         ]);
     }
 
