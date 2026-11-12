@@ -140,13 +140,13 @@
             </div>
         </div>
 
-        <!-- REKAPAN KEHADIRAN PER KELAS (Ringkasan Cepat) -->
         @if($selectedClassId === 'all')
+        <!-- TAMPILAN UTAMA: REKAPITULASI DAFTAR HADIR PER KELAS -->
         <div class="bg-white rounded-2xl shadow-xs border border-slate-200/90 overflow-hidden">
-            <div class="p-5 border-b border-slate-100 flex items-center justify-between">
+            <div class="p-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h2 class="text-base font-heading font-bold text-slate-900">Rekapitulasi Kehadiran Siswa Per Kelas</h2>
-                    <p class="text-xs text-slate-500 mt-0.5">Persentase dan akumulasi kehadiran siswa di setiap kelas selama periode {{ $selectedYear }} ({{ ucfirst($selectedSemester) }}).</p>
+                    <p class="text-xs text-slate-500 mt-0.5">Pilih atau klik salah satu kelas di bawah ini untuk langsung membuka rincian daftar absen siswa.</p>
                 </div>
                 <span class="text-xs font-semibold px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-md border border-indigo-100">
                     {{ $attendanceByClass->count() }} Kelas Terdata
@@ -157,23 +157,29 @@
                 <table class="w-full text-left border-collapse">
                     <thead>
                         <tr class="bg-slate-50 text-slate-600 text-[11px] uppercase tracking-wider font-bold border-b border-slate-200">
-                            <th class="py-3 px-4">No</th>
-                            <th class="py-3 px-4">Nama Kelas</th>
-                            <th class="py-3 px-4 text-center">Jumlah Siswa</th>
-                            <th class="py-3 px-4 text-center">Hadir</th>
-                            <th class="py-3 px-4 text-center">Sakit</th>
-                            <th class="py-3 px-4 text-center">Izin</th>
-                            <th class="py-3 px-4 text-center">Alpa</th>
-                            <th class="py-3 px-4 text-center">Total Sesi Presensi</th>
-                            <th class="py-3 px-4 text-center">% Rata-rata Hadir</th>
-                            <th class="py-3 px-4 text-center">Aksi</th>
+                            <th class="py-3.5 px-4">No</th>
+                            <th class="py-3.5 px-4">Nama Kelas</th>
+                            <th class="py-3.5 px-4 text-center">Jumlah Siswa</th>
+                            <th class="py-3.5 px-4 text-center">Hadir</th>
+                            <th class="py-3.5 px-4 text-center">Sakit</th>
+                            <th class="py-3.5 px-4 text-center">Izin</th>
+                            <th class="py-3.5 px-4 text-center">Alpa</th>
+                            <th class="py-3.5 px-4 text-center">Total Sesi</th>
+                            <th class="py-3.5 px-4 text-center">% Rata-rata Hadir</th>
+                            <th class="py-3.5 px-4 text-center">Aksi</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 text-sm">
                         @forelse($attendanceByClass as $idx => $ac)
-                        <tr class="hover:bg-indigo-50/30 transition">
+                        <tr class="hover:bg-indigo-50/40 transition cursor-pointer group" 
+                            onclick="window.location='{{ route('waka.recap.index', ['academic_year' => $selectedYear, 'semester' => $selectedSemester, 'class_id' => $ac['id']]) }}#daftar-hadir'">
                             <td class="py-3.5 px-4 font-medium text-slate-400">{{ $idx + 1 }}</td>
-                            <td class="py-3.5 px-4 font-bold text-slate-900">{{ $ac['name'] }}</td>
+                            <td class="py-3.5 px-4">
+                                <span class="font-bold text-slate-900 group-hover:text-indigo-600 transition flex items-center space-x-1.5">
+                                    <span>{{ $ac['name'] }}</span>
+                                    <svg class="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                                </span>
+                            </td>
                             <td class="py-3.5 px-4 text-center text-slate-600 font-semibold">{{ $ac['total_students'] }} Siswa</td>
                             <td class="py-3.5 px-4 text-center font-bold text-emerald-600">{{ $ac['hadir'] }}</td>
                             <td class="py-3.5 px-4 text-center text-sky-600 font-medium">{{ $ac['sakit'] }}</td>
@@ -185,10 +191,11 @@
                                     {{ $ac['persentase'] }}%
                                 </span>
                             </td>
-                            <td class="py-3.5 px-4 text-center">
-                                <a href="{{ route('waka.recap.index', ['academic_year' => $selectedYear, 'semester' => $selectedSemester, 'class_id' => $ac['id']]) }}" 
-                                   class="inline-flex items-center px-2.5 py-1 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition">
-                                    Rincian Siswa
+                            <td class="py-3.5 px-4 text-center" onclick="event.stopPropagation()">
+                                <a href="{{ route('waka.recap.index', ['academic_year' => $selectedYear, 'semester' => $selectedSemester, 'class_id' => $ac['id']]) }}#daftar-hadir" 
+                                   class="inline-flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition border border-indigo-200">
+                                    <span>Buka Daftar Absen</span>
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
                                 </a>
                             </td>
                         </tr>
@@ -201,21 +208,23 @@
                 </table>
             </div>
         </div>
-        @endif
-
-        <!-- TABEL DETAIL DAFTAR HADIR SISWA -->
+        @else
+        <!-- TAMPILAN RINCIAN DAFTAR ABSEN SISWA UNTUK KELAS YANG DIKLIK -->
+        @php $activeClassName = $allClasses->firstWhere('id', $selectedClassId)->name ?? 'Kelas Terpilih'; @endphp
         <div class="bg-white rounded-2xl shadow-xs border border-slate-200/90 overflow-hidden">
             <div class="p-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                    <h2 class="text-base font-heading font-bold text-slate-900">Rincian Daftar Hadir & Akumulasi Kehadiran Siswa</h2>
-                    <p class="text-xs text-slate-500 mt-0.5">
-                        Menampilkan rekap sesi kehadiran setiap siswa pada periode {{ $selectedYear }} ({{ ucfirst($selectedSemester) }})
-                        @if($selectedClassId && $selectedClassId !== 'all')
-                            untuk kelas <strong>{{ $allClasses->firstWhere('id', $selectedClassId)->name ?? '' }}</strong>.
-                        @else
-                            di seluruh kelas.
-                        @endif
-                    </p>
+                <div class="flex items-center space-x-3">
+                    <a href="{{ route('waka.recap.index', ['academic_year' => $selectedYear, 'semester' => $selectedSemester, 'class_id' => 'all']) }}#daftar-hadir" 
+                       class="inline-flex items-center space-x-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition" title="Kembali ke Rekap Semua Kelas">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                        <span>Kembali ke Daftar Kelas</span>
+                    </a>
+                    <div>
+                        <h2 class="text-base font-heading font-bold text-slate-900">Daftar Absen Siswa Kelas {{ $activeClassName }}</h2>
+                        <p class="text-xs text-slate-500 mt-0.5">
+                            Rekap kehadiran siswa per sesi pada periode {{ $selectedYear }} ({{ ucfirst($selectedSemester) }}).
+                        </p>
+                    </div>
                 </div>
                 <div class="flex items-center space-x-2">
                     <input type="text" id="studentSearchInput" placeholder="Cari nama / NISN..." onkeyup="filterStudentTable()" 
@@ -272,8 +281,7 @@
                         <tr>
                             <td colspan="10" class="py-10 text-center text-slate-500">
                                 <svg class="w-8 h-8 mx-auto text-slate-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
-                                <p class="font-medium text-slate-700">Belum ada data kehadiran siswa yang tercatat pada semester ini.</p>
-                                <p class="text-xs text-slate-400 mt-1">Data kehadiran otomatis terakumulasi saat guru mengisi jurnal dan absensi kelas.</p>
+                                <p class="font-medium text-slate-700">Belum ada siswa terdaftar pada kelas ini.</p>
                             </td>
                         </tr>
                         @endforelse
@@ -281,6 +289,7 @@
                 </table>
             </div>
         </div>
+        @endif
 
     </div>
 
