@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use App\Models\Attendance;
 use App\Models\Journal;
 use App\Models\LeaveRequest;
 use App\Models\Schedule;
@@ -76,6 +77,93 @@ class RecapController extends Controller
         $totalIzin = $leaves->where('status', 'approved')->count();
         $totalPending = $leaves->where('status', 'pending')->count();
 
+        // 5. Rekapitulasi Daftar Hadir Siswa (Tab 1: Rekapan Daftar Hadir Siswa)
+        $selectedClassId = $request->get('class_id', 'all');
+        $allClasses = SchoolClass::orderBy('name')->get();
+
+        $studentsQuery = User::where('role', 'siswa')
+            ->with(['schoolClass']);
+
+        if ($selectedClassId && $selectedClassId !== 'all') {
+            $studentsQuery->where('class_id', $selectedClassId);
+        }
+
+        $allStudents = $studentsQuery->orderBy('name', 'asc')->get();
+
+        // Ambil ID semua jurnal dalam periode semester yang dipilih
+        $journalIds = $journals->pluck('id');
+
+        // Ambil semua data kehadiran siswa dari jurnal-jurnal tersebut
+        $attendanceRecords = Attendance::whereIn('journal_id', $journalIds)
+            ->get(['id', 'journal_id', 'student_id', 'status']);
+
+        // Kelompokkan kehadiran per student_id
+        $attendancesByStudent = $attendanceRecords->groupBy('student_id');
+
+        // Hitung akumulasi kehadiran per siswa
+        $studentAttendanceRecap = $allStudents->map(function ($student) use ($attendancesByStudent) {
+            $records = $attendancesByStudent->get($student->id, collect());
+            $hadir = $records->where('status', 'hadir')->count();
+            $sakit = $records->where('status', 'sakit')->count();
+            $izin = $records->where('status', 'izin')->count();
+            $alpa = $records->where('status', 'alfa')->count();
+            $totalPertemuan = $records->count();
+            $persentase = $totalPertemuan > 0 ? round(($hadir / $totalPertemuan) * 100, 1) : 0;
+
+            return [
+                'id' => $student->id,
+                'name' => $student->name,
+                'nisn' => $student->identifier ?? '-',
+                'class_name' => $student->schoolClass->name ?? '-',
+                'hadir' => $hadir,
+                'sakit' => $sakit,
+                'izin' => $izin,
+                'alpa' => $alpa,
+                'total_pertemuan' => $totalPertemuan,
+                'persentase' => $persentase,
+            ];
+        });
+
+        // Rekapitulasi per Kelas untuk Daftar Hadir
+        $attendanceByClass = $allClasses->map(function ($cls) use ($allStudents, $attendancesByStudent) {
+            $classStudents = $allStudents->where('class_id', $cls->id);
+            $studentIds = $classStudents->pluck('id');
+
+            $clsRecords = collect();
+            foreach ($studentIds as $sid) {
+                $clsRecords = $clsRecords->merge($attendancesByStudent->get($sid, collect()));
+            }
+
+            $hadir = $clsRecords->where('status', 'hadir')->count();
+            $sakit = $clsRecords->where('status', 'sakit')->count();
+            $izin = $clsRecords->where('status', 'izin')->count();
+            $alpa = $clsRecords->where('status', 'alfa')->count();
+            $total = $clsRecords->count();
+            $pct = $total > 0 ? round(($hadir / $total) * 100, 1) : 0;
+
+            return [
+                'id' => $cls->id,
+                'name' => $cls->name,
+                'total_students' => $classStudents->count(),
+                'hadir' => $hadir,
+                'sakit' => $sakit,
+                'izin' => $izin,
+                'alpa' => $alpa,
+                'total_pertemuan' => $total,
+                'persentase' => $pct,
+            ];
+        });
+
+        // Total metrik keseluruhan kehadiran siswa
+        $totalHadirAll = $attendanceRecords->where('status', 'hadir')->count();
+        $totalSakitAll = $attendanceRecords->where('status', 'sakit')->count();
+        $totalIzinAll = $attendanceRecords->where('status', 'izin')->count();
+        $totalAlpaAll = $attendanceRecords->where('status', 'alfa')->count();
+        $totalSemuaKehadiran = $attendanceRecords->count();
+        $avgPersentaseHadir = $totalSemuaKehadiran > 0 
+            ? round(($totalHadirAll / $totalSemuaKehadiran) * 100, 1) 
+            : 0;
+
         return view('waka.recap.index', compact(
             'selectedYear',
             'selectedSemester',
@@ -85,7 +173,17 @@ class RecapController extends Controller
             'teacherRecap',
             'leaves',
             'totalIzin',
-            'totalPending'
+            'totalPending',
+            'allClasses',
+            'selectedClassId',
+            'studentAttendanceRecap',
+            'attendanceByClass',
+            'totalHadirAll',
+            'totalSakitAll',
+            'totalIzinAll',
+            'totalAlpaAll',
+            'totalSemuaKehadiran',
+            'avgPersentaseHadir'
         ));
     }
 
@@ -132,6 +230,83 @@ class RecapController extends Controller
             'endDate',
             'journals',
             'leaves'
+        ));
+    }
+
+    /**
+     * Tampilan Siap Cetak Rekapitulasi Daftar Hadir Siswa
+     */
+    public function printAttendanceRecap(Request $request)
+    {
+        $setting = Setting::first();
+        $now = Carbon::now('Asia/Jakarta');
+        $autoAcademicYear = ($now->month >= 7) ? $now->year . '/' . ($now->year + 1) : ($now->year - 1) . '/' . $now->year;
+        $defaultYear = $setting->academic_year ?? $autoAcademicYear;
+        if ($defaultYear === '2024/2025' && $now->year >= 2026) {
+            $defaultYear = $autoAcademicYear;
+        }
+
+        $selectedYear = $request->get('academic_year', $defaultYear);
+        $selectedSemester = $request->get('semester', $setting->active_semester ?? (($now->month >= 7) ? 'ganjil' : 'genap'));
+
+        $years = explode('/', $selectedYear);
+        $startYear = isset($years[0]) ? (int)$years[0] : (int)date('Y');
+        $endYear = isset($years[1]) ? (int)$years[1] : $startYear + 1;
+
+        if ($selectedSemester === 'ganjil') {
+            $startDate = Carbon::create($startYear, 7, 1)->startOfDay();
+            $endDate = Carbon::create($startYear, 12, 31)->endOfDay();
+        } else {
+            $startDate = Carbon::create($endYear, 1, 1)->startOfDay();
+            $endDate = Carbon::create($endYear, 6, 30)->endOfDay();
+        }
+
+        $selectedClassId = $request->get('class_id', 'all');
+        $allClasses = SchoolClass::orderBy('name')->get();
+        $selectedClass = ($selectedClassId && $selectedClassId !== 'all') ? SchoolClass::find($selectedClassId) : null;
+
+        $journals = Journal::whereBetween('date', [$startDate->toDateString(), $endDate->toDateString()])->get();
+        $journalIds = $journals->pluck('id');
+
+        $studentsQuery = User::where('role', 'siswa')->with('schoolClass');
+        if ($selectedClassId && $selectedClassId !== 'all') {
+            $studentsQuery->where('class_id', $selectedClassId);
+        }
+        $students = $studentsQuery->orderBy('name', 'asc')->get();
+
+        $attendanceRecords = Attendance::whereIn('journal_id', $journalIds)->get();
+        $attendancesByStudent = $attendanceRecords->groupBy('student_id');
+
+        $studentAttendanceRecap = $students->map(function ($student) use ($attendancesByStudent) {
+            $records = $attendancesByStudent->get($student->id, collect());
+            $hadir = $records->where('status', 'hadir')->count();
+            $sakit = $records->where('status', 'sakit')->count();
+            $izin = $records->where('status', 'izin')->count();
+            $alpa = $records->where('status', 'alfa')->count();
+            $totalPertemuan = $records->count();
+            $persentase = $totalPertemuan > 0 ? round(($hadir / $totalPertemuan) * 100, 1) : 0;
+
+            return [
+                'id' => $student->id,
+                'name' => $student->name,
+                'nisn' => $student->identifier ?? '-',
+                'class_name' => $student->schoolClass->name ?? '-',
+                'hadir' => $hadir,
+                'sakit' => $sakit,
+                'izin' => $izin,
+                'alpa' => $alpa,
+                'total_pertemuan' => $totalPertemuan,
+                'persentase' => $persentase,
+            ];
+        });
+
+        return view('waka.recap.print_attendance', compact(
+            'selectedYear',
+            'selectedSemester',
+            'startDate',
+            'endDate',
+            'selectedClass',
+            'studentAttendanceRecap'
         ));
     }
 

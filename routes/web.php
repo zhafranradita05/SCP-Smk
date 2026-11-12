@@ -152,6 +152,7 @@ Route::middleware(['auth', 'role:waka_kurikulum', 'active.session'])->group(func
     // Rekapitulasi Semester & Cetak
     Route::get('/waka/recap', [\App\Http\Controllers\Web\RecapController::class, 'index'])->name('waka.recap.index');
     Route::get('/waka/recap/print', [\App\Http\Controllers\Web\RecapController::class, 'print'])->name('waka.recap.print');
+    Route::get('/waka/recap/attendance/print', [\App\Http\Controllers\Web\RecapController::class, 'printAttendanceRecap'])->name('waka.recap.attendance.print');
 
     // Profil & Edit Akun Waka Kurikulum
     Route::get('/waka/profile', [UserController::class, 'editProfile'])->name('waka.profile.edit');
