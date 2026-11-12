@@ -309,7 +309,9 @@ class LeaveRequestController extends Controller
         $homeroomClass = \App\Models\SchoolClass::where('homeroom_teacher_id', $user->id)->first();
         if (!$homeroomClass) {
             $homeroomClass = \App\Models\SchoolClass::whereHas('homeroomTeacher', function ($t) use ($user) {
-                $t->where('name', $user->name)->orWhere('username', $user->username);
+                $t->where('id', $user->id)
+                  ->orWhere('name', 'like', '%' . $user->name . '%')
+                  ->orWhere('username', $user->username);
             })->first();
         }
         $isWaliKelas = ($user->role === 'wali_kelas' || $homeroomClass !== null);
@@ -318,14 +320,15 @@ class LeaveRequestController extends Controller
         $bkClasses = \App\Models\SchoolClass::where('bk_teacher_id', $user->id)->orderBy('name')->get(['id', 'name']);
         if ($bkClasses->isEmpty()) {
             $bkClasses = \App\Models\SchoolClass::whereHas('bkTeacher', function ($t) use ($user) {
-                $t->where('name', $user->name)->orWhere('username', $user->username);
+                $t->where('id', $user->id)
+                  ->orWhere('name', 'like', '%' . $user->name . '%')
+                  ->orWhere('username', $user->username);
             })->get(['id', 'name']);
         }
 
         // 3. Cek kelas yang diajar oleh guru ini (sebagai guru pengampu/mapel)
         $teachingClassIds = \App\Models\Schedule::where('teacher_id', $user->id)
-            ->orWhere('teacher_name', $user->name)
-            ->pluck('school_class_id')
+            ->pluck('class_id')
             ->filter()
             ->unique();
         $teachingClasses = \App\Models\SchoolClass::whereIn('id', $teachingClassIds)->orderBy('name')->get(['id', 'name']);
@@ -373,11 +376,10 @@ class LeaveRequestController extends Controller
         $semester = $setting->active_semester ?? 'ganjil';
 
         // 3. Ambil data sesi mengajar jurnal guru ini pada kelas terpilih (jika ada)
-        $teacherJournalIds = \App\Models\Journal::where('teacher_id', $user->id)
-            ->whereHas('schedule', function ($q) use ($schoolClass) {
-                $q->where('school_class_id', $schoolClass->id);
-            })
-            ->pluck('id');
+        $teacherJournalIds = \App\Models\Journal::whereHas('schedule', function ($q) use ($user, $schoolClass) {
+            $q->where('teacher_id', $user->id)
+              ->where('class_id', $schoolClass->id);
+        })->pluck('id');
         $hasTeacherSubjectData = $teacherJournalIds->isNotEmpty();
         $allSubjectAttendances = $hasTeacherSubjectData
             ? \App\Models\Attendance::whereIn('journal_id', $teacherJournalIds)->get()->groupBy('student_id')
@@ -386,6 +388,7 @@ class LeaveRequestController extends Controller
         // 4. Ambil data siswa pada kelas terpilih
         $students = \App\Models\User::where('role', 'siswa')
             ->where('class_id', $schoolClass->id)
+            ->orderBy('name', 'asc')
             ->get();
         $studentRecaps = [];
         $totalSakit = 0;
